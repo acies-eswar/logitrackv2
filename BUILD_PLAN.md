@@ -41,3 +41,23 @@ Port congestion intelligence + idle emissions, transportation decarbonization op
 cards w/ tradeoff transparency.
 
 Each phase: implement → `dotnet build` + `dotnet test` + `tsc --noEmit`/`next build` → commit → push.
+
+## Status (all phases complete, verified locally)
+- Phase 0 ✅ RecommendationEngine (Decision Score, categories, verdict, rationale,
+  rejected reasons, funnel), scenario library 8→50, `/recommendations`, enriched
+  `/decision-hub`. 16/16 backend tests green.
+- Phase 1 ✅ Module 3 Scenario Planning rebuilt as a decision workbench.
+- Phase 2 ✅ Module 4 Executive Hub rebuilt as a capital-allocation engine.
+- Phase 3 ✅ Module 1 Network: Journey Explorer + journey-centric 8-KPI strip.
+- Phase 4 ✅ Module 5 Sustainability: Emissions Intelligence (attribution, carbon
+  economics + sensitivity, GLEC benchmarking, alternatives).
+- Phase 5 ✅ Module 2 Transportation: Port Congestion + idle emissions +
+  decarbonization opportunity cards (`/transportation/ports`).
+
+Verification: `dotnet build` + `dotnet test` (16/16) green; `tsc --noEmit` clean;
+`next build` clean (14 routes). Existing module naming/IA preserved; extra pages
+(emissions, landed, workbench, tms) left as-is.
+
+NOTE: pushing to origin is blocked in this session (git proxy and GitHub MCP both
+return 403 / read-only). All work is committed to branch `claude/dazzling-cannon-hgvb69`
+locally and is ready to push once write access is available.
