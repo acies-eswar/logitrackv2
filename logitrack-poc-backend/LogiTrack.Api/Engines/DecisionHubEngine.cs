@@ -9,9 +9,13 @@ public static class DecisionHubEngine
     public static object Build(List<Row> lanes, List<Row> trade, Row fin,
         double carbonPrice, double waccPct, int horizonYears, int trials)
     {
+        var recById = RecommendationEngine.Rank(lanes, trade, carbonPrice)
+            .ToDictionary(r => r.ScenarioId);
+
         var rows = new List<Dictionary<string, object?>>();
         foreach (var s in ScenarioLibrary.All)
         {
+            if (!recById.TryGetValue(s.ScenarioId, out var rec)) continue;
             var ev = (Dictionary<string, object?>)EconomicsEngine.EvaluateScenario(s, lanes, trade, carbonPrice, waccPct, horizonYears);
             var te = (Dictionary<string, object?>)EconomicsEngine.TransitionEconomics(s, lanes, trade, fin, carbonPrice, waccPct, horizonYears, trials);
             var impact = (Dictionary<string, object?>)ev["impact"]!;
@@ -34,18 +38,37 @@ public static class DecisionHubEngine
                 ["risk_score"] = risk["risk_score"],
                 ["risk_rating"] = risk["risk_rating"],
                 ["verdict"] = te["verdict"],
+                // ── V3.0 recommendation overlay (Decision Score, category, sub-scores) ──
+                ["category"] = rec.Category,
+                ["decision_score"] = rec.DecisionScore,
+                ["decision_verdict"] = rec.Verdict,
+                ["recommendation_category"] = ScenarioLibrary.CategoryOf(s),
+                ["emissions_reduction_pct"] = rec.EmissionsReductionPct,
+                ["rationale"] = rec.Rationale,
+                ["rejected_reason"] = rec.RejectedReason,
+                ["sub_scores"] = new Dictionary<string, object?>
+                {
+                    ["sustainability"] = rec.SusScore, ["financial"] = rec.FinScore,
+                    ["operational"] = rec.OpScore, ["risk"] = rec.RiskScore, ["strategic"] = rec.StratScore,
+                },
             });
         }
 
-        var ranked = rows.OrderByDescending(r => (double)r["p50_npv_usd"]!).ToList();
+        // Rank by Decision Score (spec §178 default sort), tie-break on P50 NPV.
+        var ranked = rows
+            .OrderByDescending(r => (double)r["decision_score"]!)
+            .ThenByDescending(r => (double)r["p50_npv_usd"]!)
+            .ToList();
         var approved = ranked.Where(r => (string)r["verdict"]! is "APPROVE" or "PILOT").ToList();
         var recommended = ranked.Count > 0 ? (object)ranked[0] : null;
 
         var carrierDispositions = TransportationEngine.AllCarrierDispositions(lanes);
+        var funnel = RecommendationEngine.Funnel(RecommendationEngine.Rank(lanes, trade, carbonPrice));
 
         return new Dictionary<string, object?>
         {
             ["recommended_scenario"] = recommended,
+            ["funnel"] = funnel,
             ["scenarios"] = ranked.Cast<object>().ToList(),
             ["portfolio"] = new Dictionary<string, object?>
             {

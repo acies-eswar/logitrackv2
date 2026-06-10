@@ -147,9 +147,32 @@ public class EngineTests : IClassFixture<StoreFixture>
             _store.LanesInScope(), _store.GetRows("trade"), _store.GetObject("financial"),
             75, 8.5, 5, Config.DefaultMonteCarloTrials);
         var rows = ((List<object>)hub["scenarios"]!).Cast<Dictionary<string, object?>>().ToList();
-        var npvs = rows.Select(r => (double)r["p50_npv_usd"]!).ToList();
-        for (int i = 0; i + 1 < npvs.Count; i++)
-            Assert.True(npvs[i] >= npvs[i + 1]);
+        // V3.0 ranks by Decision Score (spec §178), tie-broken by P50 NPV.
+        var scores = rows.Select(r => (double)r["decision_score"]!).ToList();
+        for (int i = 0; i + 1 < scores.Count; i++)
+            Assert.True(scores[i] >= scores[i + 1]);
+    }
+
+    [Fact]
+    public void RecommendationsRankByDecisionScore()
+    {
+        var payload = (Dictionary<string, object?>)RecommendationEngine.Build(
+            _store.LanesInScope(), _store.GetRows("trade"), 75);
+        var recs = ((List<object>)payload["recommendations"]!).Cast<Dictionary<string, object?>>().ToList();
+        Assert.True(recs.Count >= 30, $"expected a rich alternative set, got {recs.Count}");
+        var scores = recs.Select(r => (double)r["decision_score"]!).ToList();
+        for (int i = 0; i + 1 < scores.Count; i++)
+            Assert.True(scores[i] >= scores[i + 1]);
+        // every score is a valid 0–100 Decision Score and carries a category + verdict
+        foreach (var r in recs)
+        {
+            Assert.InRange((double)r["decision_score"]!, 0, 100);
+            Assert.False(string.IsNullOrWhiteSpace((string)r["category"]!));
+            Assert.Contains((string)r["verdict"]!, new[] { "APPROVE", "PILOT", "CONDITIONAL", "DECLINE" });
+        }
+        var funnel = (Dictionary<string, object?>)payload["funnel"]!;
+        Assert.True((int)funnel["all_opportunities"]! >= (int)funnel["viable"]!);
+        Assert.True((int)funnel["viable"]! >= (int)funnel["approved"]!);
     }
 }
 

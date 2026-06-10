@@ -82,7 +82,7 @@ function WorkbenchInner() {
             <Insight n={1} title="True Cost of Switching" tag="TCS" tagColor="blue"
               headline={fmtUSD(ins.tcs.total_switching_cost_usd)} headlineLabel="Total switching cost"
               sub={`One-time ${fmtUSD(ins.tcs.one_time_usd)} · Recurring ${fmtUSD(ins.tcs.recurring_annual_usd)}/yr`}>
-              <WaterfallTooltipBar data={ins.tcs.components.map((c: any) => ({ name: c.label, value: c.amount }))} height={300} />
+              <WaterfallTooltipBar data={ins.tcs.components.map((c: any) => ({ name: c.label, value: c.amount }))} />
             </Insight>
 
             {/* Insight 2: WCB */}

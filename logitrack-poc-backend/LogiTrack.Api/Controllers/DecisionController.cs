@@ -26,6 +26,12 @@ public sealed class DecisionController : ControllerBase
             req.FreightDeltaPct, req.Co2eDeltaPct, req.OtifDeltaPts, req.TransitDeltaDays));
     }
 
+    // ── Module 3/4: Recommendation ranking (Decision Score, categories, alternatives) ──
+    [HttpGet("recommendations")]
+    public object Recommendations(
+        [FromQuery(Name = "carbon_price")] double carbonPrice = Config.DefaultInternalCarbonPriceUsd)
+        => RecommendationEngine.Build(_store.LanesInScope(), _store.GetRows("trade"), carbonPrice);
+
     // ── Module 6: Transition Economics ──
     [HttpPost("transition/evaluate")]
     public IActionResult Transition([FromBody] EvalRequest req)
