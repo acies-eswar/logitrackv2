@@ -45,6 +45,8 @@ export const api = {
   carriers: () => get<any[]>("/transportation/carriers"),
   lanes: () => get<any[]>("/transportation/lanes"),
   transit: () => get<any[]>("/transportation/transit"),
+  // V3.0 — Port congestion & idle emissions
+  ports: () => get<any[]>("/transportation/ports"),
   // Module 5
   sustSummary: (cp = 75) => get<any>(`/sustainability/summary?carbon_price=${cp}`),
   sustByLane: (cp = 75) => get<any[]>(`/sustainability/by-lane?carbon_price=${cp}`),

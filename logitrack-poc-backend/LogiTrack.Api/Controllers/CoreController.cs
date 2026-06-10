@@ -49,6 +49,9 @@ public sealed class CoreController : ControllerBase
     [HttpGet("transportation/transit")]
     public object Transit() => TransportationEngine.TransitTimeDistribution(_store.LanesInScope());
 
+    [HttpGet("transportation/ports")]
+    public object Ports() => TransportationEngine.PortCongestion(_store.LanesInScope());
+
     [HttpGet("transportation/carrier-pack")]
     public IActionResult CarrierPack([FromQuery(Name = "carrier")] string carrier = "")
     {

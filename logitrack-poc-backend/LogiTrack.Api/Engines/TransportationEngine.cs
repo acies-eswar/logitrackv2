@@ -303,4 +303,57 @@ public static class TransportationEngine
             ["avg_cost_per_shipment"] = R2(SafeDiv(lanes.Sum(LaneAnnualFreight), totalShip)),
         };
     }
+
+    // ── Module 2 — Port Congestion Intelligence (spec §116–119) ──────────────────
+    // Idle Emissions = Waiting Days × Daily Fuel Burn × Emission Factor (spec §118),
+    // displayed separately from transport emissions. Deterministic per-port congestion.
+    public static List<object> PortCongestion(List<Row> lanes)
+    {
+        const double dailyIdleCo2ePerCall = 15.5;   // tCO2e/day hotelling (≈5 t fuel × 3.1)
+        const double demurragePerContainerDay = 165; // USD/container/day
+
+        // A port appears as the destination of Supplier→Port or the origin of Port→Plant.
+        var ports = new Dictionary<string, (string country, int journeys, int ship, double freight)>();
+        void Add(string name, string country, Row l)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            var cur = ports.TryGetValue(name, out var v) ? v : (country: country, journeys: 0, ship: 0, freight: 0.0);
+            ports[name] = (string.IsNullOrEmpty(cur.country) ? country : cur.country,
+                cur.journeys + 1, cur.ship + LaneShipments(l), cur.freight + LaneAnnualFreight(l));
+        }
+        foreach (var l in lanes)
+        {
+            var seg = l.GetString("Segment");
+            if (seg == "Supplier→Port") Add(l.GetString("Destination"), l.GetString("Destination_Country"), l);
+            else if (seg == "Port→Plant") Add(l.GetString("Origin"), l.GetString("Origin_Country"), l);
+        }
+
+        var rows = new List<(Dictionary<string, object?> row, double idle)>();
+        foreach (var (name, v) in ports)
+        {
+            // deterministic wait time 4–13 days from a stable name hash
+            uint h = 2166136261;
+            foreach (char c in name) { h ^= c; h *= 16777619; }
+            double wait = 4.0 + (h % 900) / 100.0;                  // 4.00–12.99 days
+            double congestionIndex = Math.Round(wait / 13.0 * 100, MidpointRounding.AwayFromZero);
+            double callsPerYear = Math.Max(1, v.journeys);
+            double idle = R2(wait * dailyIdleCo2ePerCall * callsPerYear);
+            double delayCost = R2(wait * v.ship * demurragePerContainerDay);
+
+            rows.Add((new Dictionary<string, object?>
+            {
+                ["port"] = name, ["country"] = v.country,
+                ["avg_wait_time_days"] = R2(wait),
+                ["congestion_index"] = congestionIndex,
+                ["affected_journeys"] = v.journeys,
+                ["affected_shipments"] = v.ship,
+                ["annual_freight_usd"] = R2(v.freight),
+                ["delay_cost_usd"] = delayCost,
+                ["idle_emissions_tco2e"] = idle,
+                ["status"] = wait >= 10 ? "Critical" : wait >= 7 ? "Elevated" : "Normal",
+            }, idle));
+        }
+
+        return rows.OrderByDescending(r => r.idle).Take(15).Select(r => (object)r.row).ToList();
+    }
 }

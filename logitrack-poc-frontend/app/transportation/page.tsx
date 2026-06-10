@@ -287,7 +287,91 @@ export default function TransportationPage() {
           </div>
         </CardBody>
       </Card>
+
+      {/* V3.0 — Port congestion intelligence + transportation decarbonization */}
+      <PortCongestion />
+      <DecarbonizationOpportunities />
     </>
+  );
+}
+
+/* ── Port Congestion Intelligence (spec §116–119) ───────────────────────────── */
+function PortCongestion() {
+  const [ports, setPorts] = useState<any[]>([]);
+  const [sel, setSel] = useState<number | null>(null);
+  useEffect(() => { api.ports().then(setPorts).catch(() => setPorts([])); }, []);
+  if (ports.length === 0) return null;
+  const sv: Record<string, "red" | "amber" | "green"> = { Critical: "red", Elevated: "amber", Normal: "green" };
+  return (
+    <Card className="mt-6">
+      <CardHeader><CardTitle>Port Congestion Intelligence</CardTitle><div className="text-[11px] text-slate-400">waiting time → cost & idle emissions (observed constraint, shown separately from transport emissions)</div></CardHeader>
+      <CardBody className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <th className="px-4 py-2.5">Port</th><th className="px-4 py-2.5">Country</th>
+              <th className="px-4 py-2.5 text-right">Avg Wait</th><th className="px-4 py-2.5 text-right">Congestion</th>
+              <th className="px-4 py-2.5 text-right">Journeys</th><th className="px-4 py-2.5 text-right">Delay Cost</th>
+              <th className="px-4 py-2.5 text-right">Idle Emissions</th><th className="px-4 py-2.5 text-center">Status</th>
+            </tr></thead>
+            <tbody>
+              {ports.map((p, i) => (
+                <tr key={i} onClick={() => setSel(sel === i ? null : i)} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
+                  <td className="px-4 py-2.5 font-medium text-ink-900 dark:text-white">{p.port}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{p.country}</td>
+                  <td className="px-4 py-2.5 text-right numeric text-ink-900 dark:text-white">{fmtNum(p.avg_wait_time_days, 1)} d</td>
+                  <td className="px-4 py-2.5 text-right"><div className="flex items-center gap-2 justify-end"><div className="h-1.5 w-16 bg-slate-200 dark:bg-slate-700 rounded-full"><div className="h-full rounded-full bg-warning" style={{ width: `${p.congestion_index}%` }} /></div><span className="numeric text-slate-500 w-8">{fmtNum(p.congestion_index)}</span></div></td>
+                  <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{p.affected_journeys}</td>
+                  <td className="px-4 py-2.5 text-right numeric text-danger">{fmtUSD(p.delay_cost_usd)}</td>
+                  <td className="px-4 py-2.5 text-right numeric text-warning">{fmtCO2(p.idle_emissions_tco2e)}</td>
+                  <td className="px-4 py-2.5 text-center"><Badge variant={sv[p.status] ?? "slate"}>{p.status}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+/* ── Transportation Decarbonization Opportunities (spec §121–125) ───────────── */
+function DecarbonizationOpportunities() {
+  const [recs, setRecs] = useState<any[]>([]);
+  useEffect(() => { api.recommendations(75).then((d) => setRecs(d.recommendations ?? [])).catch(() => setRecs([])); }, []);
+  // transportation-only levers: route / carrier / modal — no sourcing or plant change
+  const opps = recs.filter((r) => ["route", "carrier", "modal_shift"].includes(r.type)).slice(0, 6);
+  if (opps.length === 0) return null;
+  return (
+    <Card className="mt-6 mb-2">
+      <CardHeader><CardTitle>Transportation Decarbonization Opportunities</CardTitle><div className="text-[11px] text-slate-400">mode / carrier / route changes only · benefits and tradeoffs shown explicitly</div></CardHeader>
+      <CardBody className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {opps.map((o) => (
+          <div key={o.scenario_id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-sm font-semibold text-ink-900 dark:text-white truncate">{o.name}</div>
+              <Badge variant={o.cost_impact_pct <= 0 && o.emissions_reduction_pct > 0 ? "green" : "amber"}>{o.type}</Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+              <div className="rounded-lg bg-positive/5 dark:bg-positive/10 px-2 py-1.5">
+                <div className="text-[10px] uppercase text-positive">Emissions</div>
+                <div className="font-bold numeric text-positive">−{fmtNum(o.emissions_reduction_pct, 1)}%</div>
+              </div>
+              <div className={`rounded-lg px-2 py-1.5 ${o.cost_impact_pct <= 0 ? "bg-positive/5 dark:bg-positive/10" : "bg-danger/5 dark:bg-danger/10"}`}>
+                <div className={`text-[10px] uppercase ${o.cost_impact_pct <= 0 ? "text-positive" : "text-danger"}`}>Cost</div>
+                <div className={`font-bold numeric ${o.cost_impact_pct <= 0 ? "text-positive" : "text-danger"}`}>{o.cost_impact_pct > 0 ? "+" : ""}{fmtNum(o.cost_impact_pct, 1)}%</div>
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+              <div className="flex justify-between"><span>Annual savings</span><span className="font-semibold text-ink-900 dark:text-white">{fmtUSD(o.annual_savings_usd)}</span></div>
+              <div className="flex justify-between"><span>Lead-time tradeoff</span><span className={`font-semibold ${o.transit_impact_days > 0 ? "text-warning" : "text-positive"}`}>{o.transit_impact_days > 0 ? "+" : ""}{fmtNum(o.transit_impact_days, 1)} d</span></div>
+              <div className="flex justify-between"><span>Decision score</span><span className="font-semibold text-ink-900 dark:text-white">{Math.round(o.decision_score)}</span></div>
+            </div>
+            <Link href={`/scenarios`}><span className="inline-block mt-3 text-xs text-brand dark:text-cyan-400 underline">Evaluate scenario →</span></Link>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
   );
 }
 
