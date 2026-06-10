@@ -54,6 +54,8 @@ export const api = {
   matrix: (cp = 75) => get<any[]>(`/sustainability/matrix?carbon_price=${cp}`),
   // Module 3 + 6
   scenarios: () => get<any[]>("/scenarios"),
+  // V3.0 — ranked alternatives with Decision Score, categories, rationale, funnel
+  recommendations: (cp = 75) => get<any>(`/recommendations?carbon_price=${cp}`),
   evaluate: (scenario_id: string, p: any = {}) => post<any>("/scenarios/evaluate", { scenario_id, ...p }),
   transition: (scenario_id: string, p: any = {}) => post<any>("/transition/evaluate", { scenario_id, ...p }),
   workbench: (scenario_id: string, p: any = {}) => post<any>("/workbench/evaluate", { scenario_id, ...p }),
