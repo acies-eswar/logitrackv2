@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmtUSD, fmtNum, fmtCO2 } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Segmented, Badge, Select } from "@/components/ui";
-import { ScatterCard, HBarList } from "@/components/charts";
+import { ScatterCard, HBarList, LineChartCard } from "@/components/charts";
 
 // ─── Real Whirlpool product specs (Qingdao factory → Chicago DC supply chain) ──
 const WHIRLPOOL_SPECS = {
@@ -239,6 +239,9 @@ export default function SustainabilityPage() {
           </div>
         }
       />
+
+      {/* V3.0 — Emissions Intelligence: attribution, carbon economics, benchmarking */}
+      <EmissionsIntelligence cp={cp} />
 
       {/* Summary KPIs — per-unit only when product is selected */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -514,6 +517,129 @@ function KV({ label, val }: { label: string; val: string }) {
     <div className="flex justify-between">
       <span className="text-slate-500">{label}</span>
       <span className="font-mono font-medium text-slate-900 dark:text-white">{val}</span>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Module 5 — Emissions Intelligence (LogiTrack V3.0)
+   Where emissions originate, what they cost, how they can be reduced.
+   ──────────────────────────────────────────────────────────────────────────── */
+const CP_CURVE = [0, 50, 75, 100, 150, 250];
+const GLEC_FACTORS: Record<string, number> = { ocean: 9.7, road: 86, rail: 28, air: 600 };
+const SUST_CAT_VARIANT: Record<string, "green" | "blue" | "amber" | "red" | "slate"> = {
+  "Win-Win": "green", "Sustainability First": "blue", "Cost Optimized": "blue",
+  "Strategic Transition": "amber", "Balanced": "slate", "Rejected": "red",
+};
+
+function EmissionsIntelligence({ cp }: { cp: number }) {
+  const [em, setEm] = useState<any>(null);
+  const [recs, setRecs] = useState<any>(null);
+  useEffect(() => {
+    api.emissions(cp).then(setEm).catch(() => setEm(null));
+    api.recommendations(cp).then(setRecs).catch(() => setRecs(null));
+  }, [cp]);
+
+  const attribution = useMemo(() => {
+    const src = (em?.by_source ?? {}) as Record<string, number>;
+    return Object.entries(src).map(([name, v]) => ({ name, value: Math.round(v) })).sort((a, b) => b.value - a.value);
+  }, [em]);
+  const byMode = useMemo(() => {
+    const m = (em?.by_mode ?? {}) as Record<string, number>;
+    return Object.entries(m).map(([name, v]) => ({ name: name[0].toUpperCase() + name.slice(1), value: Math.round(v) })).sort((a, b) => b.value - a.value);
+  }, [em]);
+  const total = em?.total_tco2e ?? 0;
+  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: `$${p}`, cost: Math.round(total * p) })), [total]);
+  const best = recs?.recommendations?.[0]?.emissions_reduction_pct ?? 0;
+  const avoidance = total * (best / 100) * cp;
+  const topLevers = (recs?.recommendations ?? []).slice(0, 5);
+
+  if (!em) return <Card className="mb-6"><CardBody><Spinner label="Loading emissions intelligence…" /></CardBody></Card>;
+
+  return (
+    <div className="mb-6 space-y-5">
+      {/* attribution + transport sub-attribution */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <Card>
+          <CardHeader><CardTitle>Emissions Attribution — where they originate</CardTitle><Badge variant="green">{fmtCO2(total)} total</Badge></CardHeader>
+          <CardBody><HBarList data={attribution} valueKey="value" nameKey="name" /></CardBody>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Transport Sub-Attribution by Mode</CardTitle></CardHeader>
+          <CardBody><HBarList data={byMode} valueKey="value" nameKey="name" color="#0e9f6e" /></CardBody>
+        </Card>
+      </div>
+
+      {/* carbon economics */}
+      <Card>
+        <CardHeader><CardTitle>Carbon Economics</CardTitle><div className="text-[11px] text-slate-400">emissions translated into financial exposure</div></CardHeader>
+        <CardBody className="grid lg:grid-cols-[1fr_1.3fr] gap-5 items-center">
+          <div className="grid grid-cols-2 gap-3">
+            <SMini label={`Carbon Cost Exposure @ $${cp}`} value={fmtUSD(em.carbon_cost_exposure_usd)} accent="amber" />
+            <SMini label="Emissions / $1k Revenue" value={`${fmtNum(em.emissions_per_revenue_dollar, 2)} kg`} />
+            <SMini label="Reduction Potential" value={`${fmtNum(best, 1)}%`} accent="green" />
+            <SMini label="Carbon Avoidance Potential" value={fmtUSD(avoidance)} accent="green" />
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Carbon cost sensitivity (price per tonne)</div>
+            <LineChartCard data={sensitivity} x="price" currency height={200} lines={[{ key: "cost", name: "Carbon cost exposure", color: "#d97706" }]} />
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* benchmarking + alternatives */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <Card>
+          <CardHeader><CardTitle>GLEC Benchmarking & Methodology</CardTitle><Badge variant="blue">GLEC v3 · ISO 14083 · WTW</Badge></CardHeader>
+          <CardBody className="p-0">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Mode</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 text-right">GLEC factor (gCO₂e/tkm)</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 text-right">Network emissions</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 text-right">Share</th>
+              </tr></thead>
+              <tbody>
+                {byMode.map((m) => (
+                  <tr key={m.name} className="border-b border-slate-100 dark:border-slate-700">
+                    <td className="px-4 py-2 font-medium text-ink-900 dark:text-white">{m.name}</td>
+                    <td className="px-4 py-2 text-right numeric text-slate-600 dark:text-slate-400">{GLEC_FACTORS[m.name.toLowerCase()] ?? "—"}</td>
+                    <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtCO2(m.value)}</td>
+                    <td className="px-4 py-2 text-right numeric text-positive">{fmtNum(total ? (m.value / total) * 100 : 0, 1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Reduction Alternatives Evaluated</CardTitle><div className="text-[11px] text-slate-400">what alternatives exist & which win (spec §222)</div></CardHeader>
+          <CardBody className="space-y-2">
+            {topLevers.map((r: any) => (
+              <div key={r.scenario_id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-ink-900 dark:text-white truncate">{r.name}</div>
+                  <div className="text-[11px] text-slate-400">{r.category} · {fmtUSD(r.annual_savings_usd)} savings</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={SUST_CAT_VARIANT[r.category] ?? "slate"}>−{fmtNum(r.emissions_reduction_pct, 1)}%</Badge>
+                  <span className="text-sm font-bold numeric text-ink-900 dark:text-white">{Math.round(r.decision_score)}</span>
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function SMini({ label, value, accent }: { label: string; value: string; accent?: "green" | "amber" }) {
+  const c = accent === "green" ? "text-positive" : accent === "amber" ? "text-warning" : "text-ink-900 dark:text-white";
+  return (
+    <div className="rounded-lg bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/50 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-tight">{label}</div>
+      <div className={`text-base font-bold numeric mt-0.5 ${c}`}>{value}</div>
     </div>
   );
 }
