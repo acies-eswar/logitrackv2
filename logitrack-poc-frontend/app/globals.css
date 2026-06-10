@@ -1,0 +1,166 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+/* Light Mode (Default) */
+html {
+  background: #f8fafc;
+  color: #0a0e1a;
+}
+
+html, body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Dark Mode - Professional NexaVerse Theme */
+html.dark {
+  background: #020204;
+  color: #f0f4f8;
+  color-scheme: dark;
+}
+
+html.dark body {
+  background: #020204;
+}
+
+.font-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+.numeric { font-variant-numeric: tabular-nums; }
+
+/* Scrollbar - Hidden but Functional */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+/* Show scrollbar on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.3);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+html.dark *:hover {
+  scrollbar-color: rgba(100, 116, 139, 0.3) transparent;
+}
+
+::selection {
+  background: #dbe6ff;
+  color: #1d4ed8;
+}
+
+html.dark ::selection {
+  background: #1d4ed8;
+  color: #f0f4f8;
+}
+
+/* Chart Tooltips */
+.recharts-default-tooltip {
+  border-radius: 8px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1) !important;
+}
+
+html.dark .recharts-default-tooltip {
+  border-color: #1e3a5f !important;
+  background: #1a2744 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.recharts-text {
+  fill: #0a0e1a;
+}
+
+html.dark .recharts-text {
+  fill: #f0f4f8;
+}
+
+html.dark .bg-white {
+  background-color: #070b12 !important;
+}
+
+html.dark .bg-slate-50 {
+  background-color: #070b12 !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #0b1220 !important;
+}
+
+html.dark .border-slate-100 {
+  border-color: #334155 !important;
+}
+
+html.dark .border-slate-50 {
+  border-color: #1e293b !important;
+}
+
+html.dark .text-ink-900,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-black,
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-slate-400,
+html.dark .text-slate-300,
+html.dark .text-slate-200,
+html.dark .text-slate-100 {
+  color: #f8fafc !important;
+}
+
+html.dark .hover\:bg-white:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-brand-50:hover,
+html.dark .hover\:bg-slate-200:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark table th,
+html.dark table td,
+html.dark table tr,
+html.dark table tbody,
+html.dark table thead {
+  color: #f8fafc !important;
+}
+
+html.dark table tr:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Smooth transitions */
+a, button, input, select, textarea {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}

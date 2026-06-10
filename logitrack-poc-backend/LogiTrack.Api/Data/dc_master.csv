@@ -1,0 +1,6 @@
+DC_ID,Location,Country,Capacity_Units,Inventory_Value_USD,Storage_Cost_Per_Unit_USD
+DC-01,Dallas DC US,US,405000,48000000,7.73
+DC-02,Atlanta DC US,US,280000,33000000,7.17
+DC-03,Chicago DC US,US,374000,49000000,7.78
+DC-04,Frankfurt DC DE,DE,155000,65000000,3.56
+DC-05,Monterrey DC MX,MX,258000,42000000,7.18

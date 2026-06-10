@@ -1,0 +1,519 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { api, fmtUSD, fmtNum, fmtCO2 } from "@/lib/api";
+import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Segmented, Badge, Select } from "@/components/ui";
+import { ScatterCard, HBarList } from "@/components/charts";
+
+// ─── Real Whirlpool product specs (Qingdao factory → Chicago DC supply chain) ──
+const WHIRLPOOL_SPECS = {
+  "Refrigerator":    { pkgKg: 100, bareKg: 85,  upc: 60,  lastMileCost: 50.00, annualVol: 800_000,  oceanCarrier: "Maersk" },
+  "Washing Machine": { pkgKg: 88,  bareKg: 75,  upc: 95,  lastMileCost: 40.00, annualVol: 1_200_000, oceanCarrier: "Evergreen" },
+  "Air Conditioner": { pkgKg: 28,  bareKg: 22,  upc: 250, lastMileCost: 12.00, annualVol: 1_500_000, oceanCarrier: "COSCO Shipping" },
+  "Microwave Oven":  { pkgKg: 17,  bareKg: 13,  upc: 840, lastMileCost: 1.00,  annualVol: 2_000_000, oceanCarrier: "MSC" },
+  "Dishwasher":      { pkgKg: 60,  bareKg: 50,  upc: 110, lastMileCost: 30.00, annualVol: 600_000,  oceanCarrier: "CMA CGM" },
+} as const;
+
+type ProductName = keyof typeof WHIRLPOOL_SPECS;
+
+// GLEC WTW emission factors (g/tonne·km)
+const EF = { ocean: 9.7, road: 86, rail: 28 };
+
+// Standard legs: Qingdao factory → Qingdao port → LA port → Chicago DC → Customer
+const LEGS = [
+  { segment: "1", mode: "road" as const,  origin: "Qingdao Factory",    destination: "Qingdao Port",      distKm: 200,   transitDays: 1,  carrier1: "Sinotrans",     handling: 0.010 },
+  { segment: "2", mode: "ocean" as const, origin: "Qingdao Port",        destination: "Los Angeles Port",  distKm: 10800, transitDays: 18, carrier1: "",              handling: 0.030 },
+  { segment: "3", mode: "rail" as const,  origin: "Los Angeles Port",    destination: "Chicago DC",        distKm: 3200,  transitDays: 5,  carrier1: "Union Pacific", handling: 0.015 },
+  { segment: "4", mode: "road" as const,  origin: "Chicago DC",          destination: "Customer",          distKm: 600,   transitDays: 2,  carrier1: "FedEx Freight", handling: 0.010 },
+];
+const CONTAINER_RATES = { leg1Truck: 500, oceanFEU: 4400, railIntermodal: 2800 };
+
+function computeJourney(productName: ProductName) {
+  const spec = WHIRLPOOL_SPECS[productName];
+  const { pkgKg, upc, lastMileCost, annualVol, oceanCarrier } = spec;
+  const tonne = pkgKg / 1000;
+
+  function co2kg(distKm: number, ef: number) {
+    return Math.round(tonne * distKm * ef / 1e6 * 1e3 * 1000) / 1000;
+  }
+
+  const legCosts = [
+    CONTAINER_RATES.leg1Truck / upc,
+    CONTAINER_RATES.oceanFEU / upc,
+    CONTAINER_RATES.railIntermodal / upc,
+    lastMileCost,
+  ];
+  const legCo2 = [
+    co2kg(LEGS[0].distKm, EF.road),
+    co2kg(LEGS[1].distKm, EF.ocean),
+    co2kg(LEGS[2].distKm, EF.rail),
+    co2kg(LEGS[3].distKm, EF.road),
+  ];
+
+  const packagingCo2 = Math.round(pkgKg * 0.10 * 0.94 * 1000) / 1000;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+  let cumCost = 0, cumCo2 = 0;
+  const tces = LEGS.map((leg, i) => {
+    cumCost = r2(cumCost + legCosts[i]);
+    cumCo2  = r3(cumCo2 + legCo2[i] + leg.handling);
+    const carrier = i === 1 ? oceanCarrier : leg.carrier1;
+    return {
+      segment:    leg.segment,
+      mode:       leg.mode,
+      carrier,
+      origin:     leg.origin,
+      destination: leg.destination,
+      distance_km: leg.distKm,
+      transit_days: leg.transitDays,
+      per_unit_cost_usd:              r2(legCosts[i]),
+      per_unit_transport_kg_co2e:     r3(legCo2[i]),
+      per_unit_handling_kg_co2e:      leg.handling,
+      cumulative_cost_usd:            cumCost,
+      cumulative_kg_co2e:             cumCo2,
+      data_quality: i === 0 || i === 3 ? "Modeled (GLEC §3)" : "GLEC WTW",
+    };
+  });
+
+  const transportCo2 = legCo2.reduce((a, b) => a + b, 0);
+  const handlingCo2  = LEGS.reduce((a, l) => a + l.handling, 0);
+  const totalCo2     = r3(transportCo2 + handlingCo2 + packagingCo2);
+  const totalCost    = r2(legCosts.reduce((a, b) => a + b, 0));
+
+  return {
+    tces,
+    packaging: { kg_co2e_per_unit: packagingCo2 },
+    kpis: {
+      total_per_unit_cost_usd:  totalCost,
+      total_per_unit_kg_co2e:   totalCo2,
+      transport_kg_co2e:        r3(transportCo2),
+      handling_kg_co2e:         r3(handlingCo2),
+      packaging_kg_co2e:        packagingCo2,
+      total_transit_days:       LEGS.reduce((a, l) => a + l.transitDays, 0),
+      annual_volume_default:    annualVol,
+    },
+  };
+}
+
+// Pre-compute journeys for all products
+const PRODUCT_JOURNEYS: Record<string, ReturnType<typeof computeJourney>> = Object.fromEntries(
+  (Object.keys(WHIRLPOOL_SPECS) as ProductName[]).map((p) => [p, computeJourney(p)])
+);
+
+// Scatter: x=cost, y=emissions in kg CO2e per unit
+const PRODUCT_MATRIX = (Object.keys(WHIRLPOOL_SPECS) as ProductName[]).map((p) => ({
+  x: PRODUCT_JOURNEYS[p].kpis.total_per_unit_cost_usd,
+  y: Math.round(PRODUCT_JOURNEYS[p].kpis.total_per_unit_kg_co2e * 100) / 100,
+  name: p,
+  size: WHIRLPOOL_SPECS[p].annualVol,
+}));
+
+const PRODUCTS = Object.keys(WHIRLPOOL_SPECS) as ProductName[];
+
+export default function SustainabilityPage() {
+  const [cp,      setCp]      = useState(75);
+  const [sum,     setSum]     = useState<any>(null);
+  const [agg,     setAgg]     = useState<any[]>([]);
+  const [level,   setLevel]   = useState<"region" | "facility" | "category">("region");
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(false);
+
+  // No default product selected
+  const [selectedProduct, setSelectedProduct] = useState<string>("");
+  const [jView, setJView] = useState<"unit" | "annual">("unit");
+
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [drillData,   setDrillData]   = useState<Record<string, any>>({});
+
+  const load = useCallback((carbonPrice: number, lvl: typeof level) => {
+    setLoading(true);
+    setError(false);
+    const aggCall =
+      lvl === "region"   ? api.sustByRegion(carbonPrice) :
+      lvl === "facility" ? api.sustByFacility(carbonPrice) :
+                           api.sustByCategory(carbonPrice);
+    Promise.all([api.sustSummary(carbonPrice), aggCall])
+      .then(([s, a]) => { setSum(s); setAgg(a); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(cp, level); }, [cp, level, load]);
+
+  useEffect(() => {
+    setDrillData({});
+    setExpandedKey(null);
+  }, [selectedProduct]);
+
+  const expandRow = useCallback((key: string) => {
+    if (expandedKey === key) { setExpandedKey(null); return; }
+    setExpandedKey(key);
+    if (drillData[key]) return;
+
+    if (selectedProduct && PRODUCT_JOURNEYS[selectedProduct]) {
+      const journey = PRODUCT_JOURNEYS[selectedProduct];
+      const spec = WHIRLPOOL_SPECS[selectedProduct as ProductName];
+      const kpis = journey.kpis;
+      const wtCapacity = Math.floor(26000 / spec.pkgKg);
+      // ensure total is present (guard against missing fields)
+      const totalKg = kpis.total_per_unit_kg_co2e ?? (kpis.transport_kg_co2e + kpis.handling_kg_co2e + kpis.packaging_kg_co2e);
+      // debug log to help trace which product keyed drill was generated
+      console.debug("sustainability: generating drill", { key, product: selectedProduct, totalKg });
+      setDrillData((prev) => ({
+        ...prev,
+        [key]: {
+          per_unit: {
+            transport_kg_co2e:  kpis.transport_kg_co2e,
+            handling_kg_co2e:   kpis.handling_kg_co2e,
+            packaging_kg_co2e:  kpis.packaging_kg_co2e,
+            total_kg_co2e:      totalKg,
+            bare_weight_kg:     spec.bareKg,
+            packaged_weight_kg: spec.pkgKg,
+            load_factor:        Math.round(spec.pkgKg / spec.bareKg * 100) / 100,
+            cost_usd:           kpis.total_per_unit_cost_usd,
+          },
+          capacity: {
+            units_per_container_volume: spec.upc,
+            units_per_container_weight: wtCapacity,
+            binding_constraint: spec.upc < wtCapacity ? "volume" : "weight",
+            container_fill_pct: 85,
+          },
+          family: selectedProduct,
+        },
+      }));
+      return;
+    }
+
+    api.unitDefaults().then((d: any) => {
+      const families: any[] = d.product_families ?? [];
+      const fam = families[2] ?? families[0];
+      if (!fam) return;
+      api.unitCompute({
+        product_family: fam.name, bare_weight_kg: fam.bare_weight_kg, packaged_weight_kg: fam.packaged_weight_kg,
+        container_fill_pct: 0.85, annual_volume: 50000,
+        legs: [
+          { mode: "ocean", distance_km: 12000, carrier: "Ocean Carrier" },
+          { mode: "road",  distance_km: 400,   carrier: "Road Carrier" },
+        ],
+        handling_events: ["port", "dc"],
+      }).then((r: any) => setDrillData((prev) => ({ ...prev, [key]: { ...r, family: fam.name } })));
+    });
+  }, [expandedKey, drillData, selectedProduct]);
+
+  if (error) return <ApiError retry={() => load(cp, level)} />;
+  if (!sum && loading) return <Spinner label="Computing landed cost & emissions..." />;
+
+  // Journey data for selected product (null when none selected)
+  const journey = selectedProduct ? PRODUCT_JOURNEYS[selectedProduct] : null;
+  const jKpis = journey?.kpis;
+  const mult = jView === "annual" ? (jKpis?.annual_volume_default ?? 1) : 1;
+
+  // Hotspots bar chart — sorted by cost descending
+  const hotspotData = [...PRODUCT_MATRIX]
+    .sort((a, b) => b.x - a.x)
+    .map((m) => ({ name: m.name, cost: m.x }));
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Cost &amp; Sustainability Intelligence"
+        title="Landed Cost vs Landed Emissions"
+        desc="Landed cost and logistics emissions at product, lane, region, and facility levels."
+        actions={
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 whitespace-nowrap">Product</span>
+              <Select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="min-w-[180px]">
+                <option value="" disabled>— Select a product —</option>
+                {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 whitespace-nowrap">Carbon price</span>
+              <Segmented
+                value={String(cp)}
+                onChange={(v) => setCp(Number(v))}
+                options={[{ value: "0", label: "$0" }, { value: "75", label: "$75" }, { value: "150", label: "$150" }]}
+              />
+            </div>
+          </div>
+        }
+      />
+
+      {/* Summary KPIs — per-unit only when product is selected */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {selectedProduct && jKpis ? (
+          <>
+            <KPI label="Avg Landed Cost / Unit" desc={selectedProduct}         value={fmtUSD(jKpis.total_per_unit_cost_usd, false)}         accent="blue" />
+            <KPI label="Avg Emissions / Unit"   desc="kgCO₂e (GLEC WTW)"      value={`${fmtNum(jKpis.total_per_unit_kg_co2e, 2)} kg`}      accent="default" />
+            <KPI label="Total Annual Landed Cost" value={fmtUSD(sum?.total_annual_landed_cost)} accent="amber" />
+            <KPI label="Transit (Full Supply Chain)" value={`${jKpis.total_transit_days} days`} />
+          </>
+        ) : (
+          <>
+            <KPI label="Total Annual Landed Cost" value={fmtUSD(sum?.total_annual_landed_cost)} accent="blue" />
+            <KPI label="Lanes Analyzed"           value={fmtNum(sum?.lanes_analyzed)} />
+            <KPI label="Avg Cost / Shipment"      value={fmtUSD(sum?.avg_landed_cost_per_shipment)} accent="amber" />
+            <KPI label="Avg Emissions / Shipment" value={fmtCO2(sum?.avg_landed_emissions_per_shipment)} />
+          </>
+        )}
+      </div>
+
+      {/* Product-level charts — always visible (show all 5 products) */}
+      <div className="grid lg:grid-cols-2 gap-5 mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Cost vs Emissions Matrix · by Product</CardTitle>
+            <Badge variant="blue">Lower-left = best</Badge>
+          </CardHeader>
+          <CardBody>
+            <ScatterCard
+              data={PRODUCT_MATRIX}
+              xLabel="Landed Cost / unit (USD)"
+              yLabel="Emissions / unit (kgCO₂e)"
+              yUnit="kg"
+              height={280}
+            />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top 5 Cost Hotspots by Product</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <HBarList data={hotspotData} valueKey="cost" nameKey="name" currency color="#f59e0b" />
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Unit Analysis */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Unit Analysis</CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="min-w-[170px]">
+              <option value="" disabled>— Select a product —</option>
+              {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </Select>
+            {selectedProduct && (
+              <Segmented
+                value={jView} onChange={setJView}
+                options={[{ value: "unit", label: "Per Unit" }, { value: "annual", label: "Annualized" }]}
+              />
+            )}
+          </div>
+        </CardHeader>
+        <CardBody>
+          {!selectedProduct ? (
+            <div className="py-12 flex flex-col items-center gap-3 text-center">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-300">
+                <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+              <div className="text-slate-500 font-medium">Select a product to view Unit Analysis</div>
+              <div className="text-sm text-slate-400">See leg-by-leg cost and emissions breakdown for each Whirlpool appliance</div>
+            </div>
+          ) : journey ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+                <KPI label={jView === "unit" ? "Landed Cost / Unit" : "Annual Landed Cost"}
+                  value={fmtUSD((jKpis!.total_per_unit_cost_usd) * mult)} accent="blue" />
+                <KPI label={jView === "unit" ? "Total CO₂e / Unit" : "Annual CO₂e"}
+                  value={jView === "unit" ? `${fmtNum(jKpis!.total_per_unit_kg_co2e, 2)} kg` : fmtCO2(jKpis!.total_per_unit_kg_co2e * mult / 1000)} accent="default" />
+                <KPI label="Transport CO₂e"  value={`${fmtNum(jKpis!.transport_kg_co2e, 2)} kg`} />
+                <KPI label="Handling CO₂e"   value={`${fmtNum(jKpis!.handling_kg_co2e, 3)} kg`} />
+                <KPI label="Packaging CO₂e"  value={`${fmtNum(jKpis!.packaging_kg_co2e, 2)} kg`} />
+                <KPI label="Total Transit"    value={`${jKpis!.total_transit_days} days`} />
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
+                      {["Seg", "Mode", "Carrier", "Origin → Destination", "Dist (km)", "Transit",
+                        jView === "unit" ? "Cost / Unit" : "Annual Cost",
+                        jView === "unit" ? "CO₂e (kg)" : "Annual CO₂e (t)",
+                        "Cum. Cost", "Cum. CO₂e", "Quality"].map((h) => (
+                        <th key={h} className="px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {journey.tces.map((tce, i) => (
+                      <tr key={i} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="px-3 py-2 text-xs font-bold text-slate-500">{tce.segment}</td>
+                        <td className="px-3 py-2 text-xs capitalize text-slate-600 dark:text-slate-300">{tce.mode}</td>
+                        <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">{tce.carrier}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">{tce.origin} → {tce.destination}</td>
+                        <td className="px-3 py-2 text-xs font-mono text-right">{fmtNum(tce.distance_km)}</td>
+                        <td className="px-3 py-2 text-xs font-mono text-right">{tce.transit_days}d</td>
+                        <td className="px-3 py-2 text-xs font-mono text-right">
+                          {jView === "unit" ? fmtUSD(tce.per_unit_cost_usd, false) : fmtUSD(tce.per_unit_cost_usd * mult)}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-mono text-right">
+                          {jView === "unit"
+                            ? `${fmtNum(tce.per_unit_transport_kg_co2e + tce.per_unit_handling_kg_co2e, 3)} kg`
+                            : fmtCO2((tce.per_unit_transport_kg_co2e + tce.per_unit_handling_kg_co2e) * mult / 1000)}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-mono text-right font-semibold text-brand dark:text-brand-400">
+                          {fmtUSD(tce.cumulative_cost_usd, false)}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-mono text-right">{fmtNum(tce.cumulative_kg_co2e, 3)} kg</td>
+                        <td className="px-3 py-2 text-xs text-slate-400 whitespace-nowrap">{tce.data_quality}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-b border-dashed border-slate-200 dark:border-slate-600 bg-slate-50/60 dark:bg-slate-800/30">
+                      <td className="px-3 py-2 text-xs font-medium text-slate-500 italic" colSpan={6}>Packaging (corrugated + foam + pallet)</td>
+                      <td className="px-3 py-2 text-xs font-mono text-right text-slate-400">—</td>
+                      <td className="px-3 py-2 text-xs font-mono text-right">
+                        {jView === "unit"
+                          ? `${fmtNum(journey.packaging.kg_co2e_per_unit, 3)} kg`
+                          : fmtCO2(journey.packaging.kg_co2e_per_unit * mult / 1000)}
+                      </td>
+                      <td colSpan={3} className="px-3 py-2 text-xs text-slate-400 italic">GLEC §4.8 embodied</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      {/* Landed Cost & Emissions Breakdown by Region/Facility/Category */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Landed Cost &amp; Emissions Breakdown</CardTitle>
+          <Segmented
+            value={level} onChange={setLevel}
+            options={[
+              { value: "region",   label: "By Region" },
+              { value: "facility", label: "By Facility" },
+              { value: "category", label: "By Category" },
+            ]}
+          />
+        </CardHeader>
+        <CardBody className="p-0">
+          {loading
+            ? <Spinner />
+            : (
+              <div className="max-h-[620px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white dark:bg-slate-950">
+                    <tr className="border-b border-slate-100 dark:border-slate-700 text-left">
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500">
+                        {level === "region" ? "Region" : level === "facility" ? "Facility" : "Product Category"}
+                      </th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-right">Lanes</th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-right">Shipments</th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-right">Avg Landed Cost</th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-right">Avg Emissions</th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-right">Total Landed Cost</th>
+                      <th className="px-5 py-2.5 text-xs font-semibold text-slate-500 text-center">Per-Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agg.map((a) => (
+                      <React.Fragment key={a.key || "unassigned"}>
+                        <tr
+                          className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                          onClick={() => expandRow(a.key || "(unassigned)")}
+                        >
+                          <td className="px-5 py-2.5 font-medium text-ink-900 dark:text-white">{a.key || "(unassigned)"}</td>
+                          <td className="px-5 py-2.5 text-right font-mono">{a.lanes}</td>
+                          <td className="px-5 py-2.5 text-right font-mono">{fmtNum(a.shipments)}</td>
+                          <td className="px-5 py-2.5 text-right font-mono">{fmtUSD(a.avg_landed_cost_per_shipment, false)}</td>
+                          <td className="px-5 py-2.5 text-right font-mono">{fmtNum(a.avg_landed_emissions_per_shipment, 3)} t</td>
+                          <td className="px-5 py-2.5 text-right font-mono font-semibold">{fmtUSD(a.total_landed_cost)}</td>
+                          <td className="px-5 py-2.5 text-center">
+                            <span className={`text-xs font-medium ${expandedKey === (a.key || "(unassigned)") ? "text-brand" : "text-slate-400"}`}>
+                              {expandedKey === (a.key || "(unassigned)") ? "▲" : "▼"}
+                            </span>
+                          </td>
+                        </tr>
+                        {expandedKey === (a.key || "(unassigned)") && (
+                          <tr key={`${a.key || "unassigned"}-drill`} className="border-b border-slate-100 dark:border-slate-700 bg-brand-50/50 dark:bg-brand/5">
+                            <td colSpan={7} className="px-5 py-4">
+                              <PerUnitDrill data={drillData[a.key || "(unassigned)"]} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </CardBody>
+      </Card>
+    </>
+  );
+}
+
+function PerUnitDrill({ data }: { data: any }) {
+  if (!data) return <Spinner label="Computing per-unit breakdown..." />;
+  const pu = data.per_unit;
+  // ensure sensible total for percent calculations
+  if (!pu.total_kg_co2e || !isFinite(pu.total_kg_co2e)) {
+    pu.total_kg_co2e = (pu.transport_kg_co2e || 0) + (pu.handling_kg_co2e || 0) + (pu.packaging_kg_co2e || 0);
+  }
+  const cap = data.capacity;
+  return (
+    <div className="grid lg:grid-cols-3 gap-5">
+      <div>
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Per-Unit Emissions (GLEC WTW)</div>
+        <div className="space-y-1.5">
+          <DrillRow label="Transport" val={`${fmtNum(pu.transport_kg_co2e, 3)} kg`} pct={pu.total_kg_co2e ? (pu.transport_kg_co2e / pu.total_kg_co2e * 100) : 0} color="brand" />
+          <DrillRow label="Handling"  val={`${fmtNum(pu.handling_kg_co2e, 3)} kg`}  pct={pu.total_kg_co2e ? (pu.handling_kg_co2e  / pu.total_kg_co2e * 100) : 0} color="blue" />
+          <DrillRow label="Packaging" val={`${fmtNum(pu.packaging_kg_co2e, 3)} kg`} pct={pu.total_kg_co2e ? (pu.packaging_kg_co2e / pu.total_kg_co2e * 100) : 0} color="amber" />
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-1.5 flex justify-between text-sm font-bold">
+            <span>Total</span><span className="font-mono">{fmtNum(pu.total_kg_co2e, 3)} kg</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Per-Unit Cost & Weight</div>
+        <div className="space-y-1.5 text-sm">
+          <KV label="Bare weight"     val={`${fmtNum(pu.bare_weight_kg, 1)} kg`} />
+          <KV label="Packaged weight" val={`${fmtNum(pu.packaged_weight_kg, 1)} kg`} />
+          <KV label="Load factor"     val={fmtNum(pu.load_factor, 2)} />
+          <KV label="Per-unit cost"   val={fmtUSD(pu.cost_usd, false)} />
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Capacity</div>
+        <div className="space-y-1.5 text-sm">
+          <KV label="Units/container (vol)" val={fmtNum(cap.units_per_container_volume)} />
+          <KV label="Units/container (wt)"  val={fmtNum(cap.units_per_container_weight)} />
+          <KV label="Binding constraint"    val={cap.binding_constraint} />
+          <KV label="Fill %"                val={`${fmtNum(cap.container_fill_pct, 1)}%`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DrillRow({ label, val, pct, color }: { label: string; val: string; pct: number; color: string }) {
+  const barColor = color === "brand" ? "bg-brand" : color === "blue" ? "bg-blue-400" : "bg-amber-400";
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-0.5">
+        <span className="text-slate-600 dark:text-slate-300">{label}</span>
+        <span className="font-mono text-slate-900 dark:text-white">{val}</span>
+      </div>
+      <div className="h-1 bg-slate-200 dark:bg-slate-700 rounded-full">
+        <div className={`h-full ${barColor} rounded-full`} style={{ width: `${Math.max(2, pct)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function KV({ label, val }: { label: string; val: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-mono font-medium text-slate-900 dark:text-white">{val}</span>
+    </div>
+  );
+}

@@ -1,0 +1,15 @@
+Supplier_ID,Supplier_Name,City,Country,Product_Category,Annual_Volume_Units,Lead_Time_Days,Annual_Spend_USD,Risk_Score
+SUP-001,Foxconn,Shenzhen CN,CN,Steel Components,117000,35,14000000,0.15
+SUP-002,Jabil,Suzhou CN,CN,Compressor Units,88000,28,15000000,0.74
+SUP-003,BYD Parts,Hanoi VN,VN,Electronics Modules,59000,14,63000000,0.39
+SUP-004,Bharat Forge,Pune IN,IN,Electronics Modules,86000,42,62000000,0.14
+SUP-005,LG Components,Seoul KR,KR,Compressor Units,103000,21,15000000,0.5
+SUP-006,Ternium,Monterrey MX,MX,Plastic Components,65000,21,13000000,0.49
+SUP-007,Boryszew,Krakow PL,PL,Electronics Modules,188000,35,26000000,0.48
+SUP-008,Wistron,Shenzhen CN,CN,Compressor Units,197000,42,31000000,0.17
+SUP-009,Luxshare,Suzhou CN,CN,Compressor Units,367000,21,55000000,0.17
+SUP-010,Hisense Mod,Hanoi VN,VN,Aluminum Parts,72000,42,15000000,0.53
+SUP-011,Tata Auto,Pune IN,IN,Plastic Components,388000,42,62000000,0.64
+SUP-012,Samsung EM,Seoul KR,KR,Plastic Components,339000,35,54000000,0.31
+SUP-013,Nemak,Monterrey MX,MX,Electronics Modules,397000,21,18000000,0.5
+SUP-014,Boryszew2,Krakow PL,PL,Compressor Units,293000,28,65000000,0.3

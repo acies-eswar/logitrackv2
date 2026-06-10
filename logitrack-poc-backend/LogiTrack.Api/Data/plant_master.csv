@@ -1,0 +1,6 @@
+Plant_ID,Plant_Name,Country,Capacity_Units_Year,Utilization_Pct,Annual_Cost_USD
+PLT-01,Apodaca Plant MX,MX,474000,67,251000000
+PLT-02,Celaya Plant MX,MX,828000,69,313000000
+PLT-03,Clyde Plant US,US,750000,68,358000000
+PLT-04,Greenville Plant US,US,900000,77,130000000
+PLT-05,Gdansk Plant PL,PL,1385000,85,139000000

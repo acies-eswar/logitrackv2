@@ -1,0 +1,61 @@
+Lane_ID,Origin,Destination,Origin_Country,Destination_Country,Origin_Lat,Origin_Lng,Dest_Lat,Dest_Lng,Segment,Carrier,Mode,Distance_KM,Transit_Time_Days,Freight_Cost_USD,Shipments_Per_Year,Avg_Weight_KG,CO2e_Tonnes,OTIF_Pct,Product_Category
+LANE-0001,Shenzhen CN,Haiphong Port VN,CN,VN,22.54,114.06,20.84,106.68,Supplier→Port,Penske,road,785.0,3,35782.0,117,21466,1.4492,92.5,Electronics Modules
+LANE-0002,Suzhou CN,Shanghai Port CN,CN,CN,31.3,120.58,31.23,121.47,Supplier→Port,Werner,road,85.0,2,12102.0,341,9395,0.0687,93.2,Major Appliances
+LANE-0003,Hanoi VN,Haiphong Port VN,VN,VN,21.03,105.85,20.84,106.68,Supplier→Port,DB Schenker,road,89.0,2,30177.0,352,22728,0.174,93.7,Electronics Modules
+LANE-0004,Pune IN,Chennai Port IN,IN,IN,18.52,73.86,13.08,80.27,Supplier→Port,DB Schenker,road,914.0,5,13644.0,485,10769,0.8465,94.3,Plastic Components
+LANE-0005,Seoul KR,Busan Port KR,KR,KR,37.57,126.98,35.18,129.08,Supplier→Port,Penske,road,326.0,4,15933.0,245,12392,0.3474,92.6,Electronics Modules
+LANE-0006,Monterrey MX,Manzanillo Port MX,MX,MX,25.69,-100.32,19.05,-104.31,Supplier→Port,Penske,road,844.0,4,14162.0,347,14318,1.0393,91.9,Compressor Units
+LANE-0007,Krakow PL,Gdansk Port PL,PL,PL,50.06,19.94,54.35,18.65,Supplier→Port,Penske,road,485.0,2,20457.0,354,12324,0.514,91.6,Electronics Modules
+LANE-0008,Gdansk Port PL,Apodaca Plant MX,PL,MX,54.35,18.65,25.78,-100.19,Port→Plant,Union Pacific,rail,9368.0,7,9371.0,282,20383,5.3465,92.0,Plastic Components
+LANE-0009,Busan Port KR,Apodaca Plant MX,KR,MX,35.18,129.08,25.78,-100.19,Port→Plant,Maersk,ocean,11484.0,31,1937.0,113,24854,2.7686,97.4,Aluminum Parts
+LANE-0010,Chennai Port IN,Celaya Plant MX,IN,MX,13.08,80.27,20.52,-100.81,Port→Plant,BNSF,rail,16277.0,5,8251.0,310,25919,11.8127,92.2,Compressor Units
+LANE-0011,LA Port US,Celaya Plant MX,US,MX,33.74,-118.26,20.52,-100.81,Port→Plant,Maersk,ocean,2261.0,40,2085.0,482,18767,0.4116,96.9,Steel Components
+LANE-0012,Manzanillo Port MX,Clyde Plant US,MX,US,19.05,-104.31,41.3,-82.97,Port→Plant,ONE,ocean,3195.0,27,1400.0,438,16300,0.5052,93.8,Electronics Modules
+LANE-0013,Hamburg Port DE,Clyde Plant US,DE,US,53.55,9.99,41.3,-82.97,Port→Plant,Union Pacific,rail,6614.0,6,8631.0,418,16844,3.1194,92.7,Plastic Components
+LANE-0014,Hamburg Port DE,Greenville Plant US,DE,US,53.55,9.99,40.1,-84.63,Port→Plant,ONE,ocean,6807.0,24,1740.0,394,24474,1.616,99.1,Plastic Components
+LANE-0015,Shanghai Port CN,Greenville Plant US,CN,US,31.23,121.47,40.1,-84.63,Port→Plant,Union Pacific,rail,11640.0,8,6939.0,92,20948,6.8274,95.0,Steel Components
+LANE-0016,Haiphong Port VN,Gdansk Plant PL,VN,PL,20.84,106.68,54.37,18.62,Port→Plant,DB Cargo,rail,8016.0,3,13190.0,216,24711,5.5463,91.7,Aluminum Parts
+LANE-0017,LA Port US,Gdansk Plant PL,US,PL,33.74,-118.26,54.37,18.62,Port→Plant,Hapag-Lloyd,ocean,9383.0,28,1410.0,131,15531,1.4136,97.7,Steel Components
+LANE-0018,Shenzhen CN,Apodaca Plant MX,CN,MX,22.54,114.06,25.78,-100.19,Supplier→Plant,MSC,ocean,13497.0,30,2366.0,83,22152,2.9002,92.4,Electronics Modules
+LANE-0019,Shenzhen CN,Greenville Plant US,CN,US,22.54,114.06,40.1,-84.63,Supplier→Plant,MSC,ocean,12785.0,16,1448.0,278,13952,1.7303,96.2,Compressor Units
+LANE-0020,Suzhou CN,Greenville Plant US,CN,US,31.3,120.58,40.1,-84.63,Supplier→Plant,Maersk,ocean,11662.0,20,915.0,449,13292,1.5036,95.5,Electronics Modules
+LANE-0021,Suzhou CN,Clyde Plant US,CN,US,31.3,120.58,41.3,-82.97,Supplier→Plant,Maersk,ocean,11588.0,29,1763.0,148,15383,1.7291,93.1,Steel Components
+LANE-0022,Hanoi VN,Gdansk Plant PL,VN,PL,21.03,105.85,54.37,18.62,Supplier→Plant,MSC,ocean,7946.0,40,1449.0,254,19682,1.517,91.5,Aluminum Parts
+LANE-0023,Hanoi VN,Celaya Plant MX,VN,MX,21.03,105.85,20.52,-100.81,Supplier→Plant,ONE,ocean,14561.0,27,2446.0,457,24013,3.3916,94.6,Compressor Units
+LANE-0024,Pune IN,Celaya Plant MX,IN,MX,18.52,73.86,20.52,-100.81,Supplier→Plant,MSC,ocean,15635.0,32,1628.0,265,25729,3.902,96.2,Electronics Modules
+LANE-0025,Pune IN,Gdansk Plant PL,IN,PL,18.52,73.86,54.37,18.62,Supplier→Plant,Maersk,ocean,6119.0,21,1192.0,411,13638,0.8095,95.7,Steel Components
+LANE-0026,Seoul KR,Gdansk Plant PL,KR,PL,37.57,126.98,54.37,18.62,Supplier→Plant,MSC,ocean,7728.0,40,1440.0,69,12476,0.9352,92.6,Major Appliances
+LANE-0027,Seoul KR,Greenville Plant US,KR,US,37.57,126.98,40.1,-84.63,Supplier→Plant,Maersk,ocean,10797.0,40,1198.0,327,12202,1.2779,97.5,Major Appliances
+LANE-0028,Monterrey MX,Greenville Plant US,MX,US,25.69,-100.32,40.1,-84.63,Supplier→Plant,COSCO,ocean,2164.0,35,2251.0,142,25565,0.5366,94.8,Compressor Units
+LANE-0029,Monterrey MX,Clyde Plant US,MX,US,25.69,-100.32,41.3,-82.97,Supplier→Plant,ONE,ocean,2358.0,31,2777.0,397,25638,0.5864,98.5,Steel Components
+LANE-0030,Krakow PL,Gdansk Plant PL,PL,PL,50.06,19.94,54.37,18.62,Supplier→Plant,BNSF,rail,488.0,5,7494.0,266,22652,0.3095,91.6,Electronics Modules
+LANE-0031,Krakow PL,Celaya Plant MX,PL,MX,50.06,19.94,20.52,-100.81,Supplier→Plant,Maersk,ocean,10254.0,29,920.0,195,11396,1.1335,98.6,Electronics Modules
+LANE-0032,Clyde Plant US,Celaya Plant MX,US,MX,41.3,-82.97,20.52,-100.81,Plant→Plant,Schneider,road,2857.0,2,26224.0,88,24326,5.9769,98.5,Electronics Modules
+LANE-0033,Celaya Plant MX,Gdansk Plant PL,MX,PL,20.52,-100.81,54.37,18.62,Plant→Plant,Union Pacific,rail,9900.0,9,10581.0,255,25895,7.1781,94.0,Major Appliances
+LANE-0034,Clyde Plant US,Apodaca Plant MX,US,MX,41.3,-82.97,25.78,-100.19,Plant→Plant,Schneider,road,2342.0,5,30140.0,49,24029,4.8397,93.8,Compressor Units
+LANE-0035,Clyde Plant US,Apodaca Plant MX,US,MX,41.3,-82.97,25.78,-100.19,Plant→Plant,Penske,road,2342.0,2,12073.0,179,12433,2.5042,98.7,Electronics Modules
+LANE-0036,Clyde Plant US,Celaya Plant MX,US,MX,41.3,-82.97,20.52,-100.81,Plant→Plant,DB Schenker,road,2857.0,3,22794.0,510,22302,5.4796,95.9,Aluminum Parts
+LANE-0037,Clyde Plant US,Apodaca Plant MX,US,MX,41.3,-82.97,25.78,-100.19,Plant→Plant,JB Hunt,road,2342.0,1,18659.0,77,15007,3.0226,99.0,Aluminum Parts
+LANE-0038,Apodaca Plant MX,Dallas DC US,MX,US,25.78,-100.19,32.78,-96.8,Plant→DC,BNSF,rail,845.0,6,4111.0,102,11183,0.2646,91.1,Compressor Units
+LANE-0039,Apodaca Plant MX,Chicago DC US,MX,US,25.78,-100.19,41.88,-87.63,Plant→DC,Werner,road,2128.0,3,12411.0,403,13234,2.4219,99.0,Electronics Modules
+LANE-0040,Apodaca Plant MX,Monterrey DC MX,MX,MX,25.78,-100.19,25.67,-100.31,Plant→DC,JB Hunt,road,40,1,15853.0,199,14935,0.0514,95.5,Electronics Modules
+LANE-0041,Celaya Plant MX,Chicago DC US,MX,US,20.52,-100.81,41.88,-87.63,Plant→DC,BNSF,rail,2678.0,5,6962.0,49,17864,1.3395,91.3,Major Appliances
+LANE-0042,Celaya Plant MX,Frankfurt DC DE,MX,DE,20.52,-100.81,50.11,8.68,Plant→DC,BNSF,rail,9570.0,6,11015.0,518,25850,6.9268,91.9,Aluminum Parts
+LANE-0043,Celaya Plant MX,Monterrey DC MX,MX,MX,20.52,-100.81,25.67,-100.31,Plant→DC,Werner,road,575.0,4,36688.0,197,21880,1.082,99.4,Steel Components
+LANE-0044,Clyde Plant US,Atlanta DC US,US,US,41.3,-82.97,33.75,-84.39,Plant→DC,JB Hunt,road,849.0,1,12096.0,360,13253,0.9677,94.7,Major Appliances
+LANE-0045,Clyde Plant US,Monterrey DC MX,US,MX,41.3,-82.97,25.67,-100.31,Plant→DC,DB Schenker,road,2359.0,4,36788.0,184,25578,5.1891,93.1,Steel Components
+LANE-0046,Clyde Plant US,Frankfurt DC DE,US,DE,41.3,-82.97,50.11,8.68,Plant→DC,Penske,road,6727.0,4,15600.0,268,15073,8.7201,93.2,Steel Components
+LANE-0047,Greenville Plant US,Monterrey DC MX,US,MX,40.1,-84.63,25.67,-100.31,Plant→DC,JB Hunt,road,2165.0,3,19172.0,40,16139,3.0049,94.2,Plastic Components
+LANE-0048,Greenville Plant US,Chicago DC US,US,US,40.1,-84.63,41.88,-87.63,Plant→DC,Penske,road,320.0,5,17127.0,437,15585,0.4289,91.8,Major Appliances
+LANE-0049,Greenville Plant US,Dallas DC US,US,US,40.1,-84.63,32.78,-96.8,Plant→DC,JB Hunt,road,1357.0,4,12623.0,193,10365,1.2096,96.4,Major Appliances
+LANE-0050,Gdansk Plant PL,Monterrey DC MX,PL,MX,54.37,18.62,25.67,-100.31,Plant→DC,Union Pacific,rail,9382.0,9,9640.0,293,19686,5.1714,93.4,Compressor Units
+LANE-0051,Gdansk Plant PL,Atlanta DC US,PL,US,54.37,18.62,33.75,-84.39,Plant→DC,DB Cargo,rail,7780.0,5,5437.0,406,10434,2.2729,96.3,Aluminum Parts
+LANE-0052,Gdansk Plant PL,Chicago DC US,PL,US,54.37,18.62,41.88,-87.63,Plant→DC,Union Pacific,rail,7237.0,5,11431.0,456,25527,5.1727,98.0,Compressor Units
+LANE-0053,Atlanta DC US,Dallas DC US,US,US,33.75,-84.39,32.78,-96.8,DC→DC,Schneider,road,1158.0,1,18858.0,93,13361,1.3306,98.1,Compressor Units
+LANE-0054,Dallas DC US,Monterrey DC MX,US,MX,32.78,-96.8,25.67,-100.31,DC→DC,Union Pacific,rail,861.0,6,9178.0,273,25033,0.6035,97.4,Compressor Units
+LANE-0055,Monterrey DC MX,Dallas DC US,MX,US,25.67,-100.31,32.78,-96.8,DC→DC,BNSF,rail,861.0,4,8922.0,78,24527,0.5913,93.0,Electronics Modules
+LANE-0056,Atlanta DC US,Frankfurt DC DE,US,DE,33.75,-84.39,50.11,8.68,DC→DC,JB Hunt,road,7402.0,4,14923.0,390,11514,7.3295,97.5,Compressor Units
+LANE-0057,Atlanta DC US,Dallas DC US,US,US,33.75,-84.39,32.78,-96.8,DC→DC,DB Cargo,rail,1158.0,5,7246.0,420,19871,0.6443,93.6,Compressor Units
+LANE-0058,Atlanta DC US,Dallas DC US,US,US,33.75,-84.39,32.78,-96.8,DC→DC,Penske,road,1158.0,1,27807.0,384,24918,2.4815,96.9,Aluminum Parts
+LANE-0059,Frankfurt DC DE,Chicago DC US,DE,US,50.11,8.68,41.88,-87.63,DC→DC,Union Pacific,rail,6964.0,7,10229.0,432,24226,4.7239,99.4,Compressor Units
+LANE-0060,Atlanta DC US,Chicago DC US,US,US,33.75,-84.39,41.88,-87.63,DC→DC,DB Schenker,road,948.0,4,10852.0,79,9573,0.7805,99.2,Plastic Components
