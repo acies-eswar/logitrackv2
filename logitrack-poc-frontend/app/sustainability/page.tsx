@@ -121,10 +121,11 @@ export default function SustainabilityPage() {
 
   // Product preselected upfront (spec Module 5) — flows table shows every journey for it.
   const [selectedProduct, setSelectedProduct] = useState<string>("Refrigerator");
-  const [jView, setJView] = useState<"unit" | "annual">("unit");
-
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [drillData,   setDrillData]   = useState<Record<string, any>>({});
+
+  const expandRow = useCallback((key: string) => {
+    setExpandedKey((current) => (current === key ? null : key));
+  }, []);
 
   const load = useCallback((carbonPrice: number, lvl: typeof level) => {
     setLoading(true);
@@ -140,65 +141,6 @@ export default function SustainabilityPage() {
 
   useEffect(() => { load(cp, level); }, [cp, level, load]);
 
-  useEffect(() => {
-    setDrillData({});
-    setExpandedKey(null);
-  }, [selectedProduct]);
-
-  const expandRow = useCallback((key: string) => {
-    if (expandedKey === key) { setExpandedKey(null); return; }
-    setExpandedKey(key);
-    if (drillData[key]) return;
-
-    if (selectedProduct && PRODUCT_JOURNEYS[selectedProduct]) {
-      const journey = PRODUCT_JOURNEYS[selectedProduct];
-      const spec = WHIRLPOOL_SPECS[selectedProduct as ProductName];
-      const kpis = journey.kpis;
-      const wtCapacity = Math.floor(26000 / spec.pkgKg);
-      // ensure total is present (guard against missing fields)
-      const totalKg = kpis.total_per_unit_kg_co2e ?? (kpis.transport_kg_co2e + kpis.handling_kg_co2e + kpis.packaging_kg_co2e);
-      // debug log to help trace which product keyed drill was generated
-      console.debug("sustainability: generating drill", { key, product: selectedProduct, totalKg });
-      setDrillData((prev) => ({
-        ...prev,
-        [key]: {
-          per_unit: {
-            transport_kg_co2e:  kpis.transport_kg_co2e,
-            handling_kg_co2e:   kpis.handling_kg_co2e,
-            packaging_kg_co2e:  kpis.packaging_kg_co2e,
-            total_kg_co2e:      totalKg,
-            bare_weight_kg:     spec.bareKg,
-            packaged_weight_kg: spec.pkgKg,
-            load_factor:        Math.round(spec.pkgKg / spec.bareKg * 100) / 100,
-            cost_usd:           kpis.total_per_unit_cost_usd,
-          },
-          capacity: {
-            units_per_container_volume: spec.upc,
-            units_per_container_weight: wtCapacity,
-            binding_constraint: spec.upc < wtCapacity ? "volume" : "weight",
-            container_fill_pct: 85,
-          },
-          family: selectedProduct,
-        },
-      }));
-      return;
-    }
-
-    api.unitDefaults().then((d: any) => {
-      const families: any[] = d.product_families ?? [];
-      const fam = families[2] ?? families[0];
-      if (!fam) return;
-      api.unitCompute({
-        product_family: fam.name, bare_weight_kg: fam.bare_weight_kg, packaged_weight_kg: fam.packaged_weight_kg,
-        container_fill_pct: 0.85, annual_volume: 50000,
-        legs: [
-          { mode: "ocean", distance_km: 12000, carrier: "Ocean Carrier" },
-          { mode: "road",  distance_km: 400,   carrier: "Road Carrier" },
-        ],
-        handling_events: ["port", "dc"],
-      }).then((r: any) => setDrillData((prev) => ({ ...prev, [key]: { ...r, family: fam.name } })));
-    });
-  }, [expandedKey, drillData, selectedProduct]);
 
   if (error) return <ApiError retry={() => load(cp, level)} />;
   if (!sum && loading) return <Spinner label="Computing landed cost & emissions..." />;
@@ -206,12 +148,38 @@ export default function SustainabilityPage() {
   // Journey data for selected product (null when none selected)
   const journey = selectedProduct ? PRODUCT_JOURNEYS[selectedProduct] : null;
   const jKpis = journey?.kpis;
-  const mult = jView === "annual" ? (jKpis?.annual_volume_default ?? 1) : 1;
+  const mult = 1;
 
   // Hotspots bar chart — sorted by cost descending
   const hotspotData = [...PRODUCT_MATRIX]
     .sort((a, b) => b.x - a.x)
     .map((m) => ({ name: m.name, cost: m.x }));
+
+  // Drill data for per-unit view (derived from agg). Provide sensible defaults so UI renders.
+  const drillData: Record<string, any> = {};
+  (agg || []).forEach((a) => {
+    const key = a.key || "(unassigned)";
+    const per_unit_cost = a.avg_landed_cost_per_shipment ?? 0;
+    const per_unit_co2 = a.avg_landed_emissions_per_shipment ?? 0;
+    drillData[key] = {
+      per_unit: {
+        transport_kg_co2e: per_unit_co2 * 0.85,
+        handling_kg_co2e: per_unit_co2 * 0.10,
+        packaging_kg_co2e: per_unit_co2 * 0.05,
+        total_kg_co2e: per_unit_co2,
+        bare_weight_kg: a.avg_weight_kg ?? 1,
+        packaged_weight_kg: (a.avg_weight_kg ?? 1) * 1.08,
+        load_factor: a.load_factor ?? 0.85,
+        cost_usd: per_unit_cost,
+      },
+      capacity: {
+        units_per_container_volume: a.units_per_container_volume ?? 100,
+        units_per_container_weight: a.units_per_container_weight ?? 1000,
+        binding_constraint: a.binding_constraint ?? "volume",
+        container_fill_pct: a.container_fill_pct ?? 80,
+      },
+    };
+  });
 
   return (
     <>
@@ -293,99 +261,6 @@ export default function SustainabilityPage() {
         </Card>
       </div>
 
-      {/* Unit Analysis */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Unit Analysis</CardTitle>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="min-w-[170px]">
-              <option value="" disabled>— Select a product —</option>
-              {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </Select>
-            {selectedProduct && (
-              <Segmented
-                value={jView} onChange={setJView}
-                options={[{ value: "unit", label: "Per Unit" }, { value: "annual", label: "Annualized" }]}
-              />
-            )}
-          </div>
-        </CardHeader>
-        <CardBody>
-          {!selectedProduct ? (
-            <div className="py-12 flex flex-col items-center gap-3 text-center">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-300">
-                <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-              </svg>
-              <div className="text-slate-500 font-medium">Select a product to view Unit Analysis</div>
-              <div className="text-sm text-slate-400">See leg-by-leg cost and emissions breakdown for each Whirlpool appliance</div>
-            </div>
-          ) : journey ? (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                <KPI label={jView === "unit" ? "Landed Cost / Unit" : "Annual Landed Cost"}
-                  value={fmtUSD((jKpis!.total_per_unit_cost_usd) * mult)} accent="blue" />
-                <KPI label={jView === "unit" ? "Total CO₂e / Unit" : "Annual CO₂e"}
-                  value={jView === "unit" ? `${fmtNum(jKpis!.total_per_unit_kg_co2e, 2)} kg` : fmtCO2(jKpis!.total_per_unit_kg_co2e * mult / 1000)} accent="default" />
-                <KPI label="Transport CO₂e"  value={`${fmtNum(jKpis!.transport_kg_co2e, 2)} kg`} />
-                <KPI label="Handling CO₂e"   value={`${fmtNum(jKpis!.handling_kg_co2e, 3)} kg`} />
-                <KPI label="Packaging CO₂e"  value={`${fmtNum(jKpis!.packaging_kg_co2e, 2)} kg`} />
-                <KPI label="Total Transit"    value={`${jKpis!.total_transit_days} days`} />
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
-                      {["Seg", "Mode", "Carrier", "Origin → Destination", "Dist (km)", "Transit",
-                        jView === "unit" ? "Cost / Unit" : "Annual Cost",
-                        jView === "unit" ? "CO₂e (kg)" : "Annual CO₂e (t)",
-                        "Cum. Cost", "Cum. CO₂e", "Quality"].map((h) => (
-                        <th key={h} className="px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {journey.tces.map((tce, i) => (
-                      <tr key={i} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-3 py-2 text-xs font-bold text-slate-500">{tce.segment}</td>
-                        <td className="px-3 py-2 text-xs capitalize text-slate-600 dark:text-slate-300">{tce.mode}</td>
-                        <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">{tce.carrier}</td>
-                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">{tce.origin} → {tce.destination}</td>
-                        <td className="px-3 py-2 text-xs font-mono text-right">{fmtNum(tce.distance_km)}</td>
-                        <td className="px-3 py-2 text-xs font-mono text-right">{tce.transit_days}d</td>
-                        <td className="px-3 py-2 text-xs font-mono text-right">
-                          {jView === "unit" ? fmtUSD(tce.per_unit_cost_usd, false) : fmtUSD(tce.per_unit_cost_usd * mult)}
-                        </td>
-                        <td className="px-3 py-2 text-xs font-mono text-right">
-                          {jView === "unit"
-                            ? `${fmtNum(tce.per_unit_transport_kg_co2e + tce.per_unit_handling_kg_co2e, 3)} kg`
-                            : fmtCO2((tce.per_unit_transport_kg_co2e + tce.per_unit_handling_kg_co2e) * mult / 1000)}
-                        </td>
-                        <td className="px-3 py-2 text-xs font-mono text-right font-semibold text-brand dark:text-brand-400">
-                          {fmtUSD(tce.cumulative_cost_usd, false)}
-                        </td>
-                        <td className="px-3 py-2 text-xs font-mono text-right">{fmtNum(tce.cumulative_kg_co2e, 3)} kg</td>
-                        <td className="px-3 py-2 text-xs text-slate-400 whitespace-nowrap">{tce.data_quality}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-b border-dashed border-slate-200 dark:border-slate-600 bg-slate-50/60 dark:bg-slate-800/30">
-                      <td className="px-3 py-2 text-xs font-medium text-slate-500 italic" colSpan={6}>Packaging (corrugated + foam + pallet)</td>
-                      <td className="px-3 py-2 text-xs font-mono text-right text-slate-400">—</td>
-                      <td className="px-3 py-2 text-xs font-mono text-right">
-                        {jView === "unit"
-                          ? `${fmtNum(journey.packaging.kg_co2e_per_unit, 3)} kg`
-                          : fmtCO2(journey.packaging.kg_co2e_per_unit * mult / 1000)}
-                      </td>
-                      <td colSpan={3} className="px-3 py-2 text-xs text-slate-400 italic">GLEC §4.8 embodied</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-        </CardBody>
-      </Card>
 
       {/* Landed Cost & Emissions Breakdown by Region/Facility/Category */}
       <Card>
@@ -552,7 +427,7 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
     return Object.entries(m).map(([name, v]) => ({ name: name[0].toUpperCase() + name.slice(1), value: Math.round(v) })).sort((a, b) => b.value - a.value);
   }, [em]);
   const total = em?.total_tco2e ?? 0;
-  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: `$${p}`, cost: Math.round(total * p) })), [total]);
+  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: p, cost: Math.round(total * p) })), [total]);
   const best = recs?.recommendations?.[0]?.emissions_reduction_pct ?? 0;
   const avoidance = total * (best / 100) * cp;
   const topLevers = (recs?.recommendations ?? []).slice(0, 5);

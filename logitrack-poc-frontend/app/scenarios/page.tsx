@@ -88,12 +88,6 @@ export default function ScenariosPage() {
   const [journey, setJourney] = useState<any>(null);
   const [err, setErr] = useState(false);
 
-  // constraints engine (spec §32 / §147–148)
-  const [maxLead, setMaxLead] = useState(99);     // max lead-time increase (days)
-  const [maxCost, setMaxCost] = useState(99);      // max cost increase (%)
-  const [minEm, setMinEm] = useState(0);           // min emission reduction (%)
-  const [hideInfeasible, setHideInfeasible] = useState(false);
-
   // Emissions-first by default (spec §13/§94) — emissions reduction leads the ranking.
   const [sortKey, setSortKey] = useState<SortKey>("emissions_reduction_pct");
   const [catFilter, setCatFilter] = useState("All");
@@ -131,34 +125,26 @@ export default function ScenariosPage() {
   const selRec = useMemo(() => recs.find((r) => r.scenario_id === selected) ?? null, [recs, selected]);
   const recommended = data?.recommended ?? null;
 
-  const feasible = useCallback((r: any) =>
-    r.transit_impact_days <= maxLead &&
-    r.cost_impact_pct <= maxCost &&
-    r.emissions_reduction_pct >= minEm,
-  [maxLead, maxCost, minEm]);
-
-  const constrainedTop = useMemo(() => recs.filter(feasible)[0] ?? null, [recs, feasible]);
-  const constraintsActive = maxLead < 99 || maxCost < 99 || minEm > 0;
-
   const categories = useMemo(() => ["All", ...Object.keys(data?.by_category ?? {})], [data]);
 
   const rows = useMemo(() => {
-    let list = recs.slice();
-    if (catFilter !== "All") list = list.filter((r) => r.category === catFilter);
-    if (hideInfeasible) list = list.filter(feasible);
+    const list = recs.slice();
+    if (catFilter !== "All") return list.filter((r) => r.category === catFilter).sort((a, b) => {
+      const dir = sortKey === "rank" || sortKey === "cost_impact_pct" || sortKey === "transit_impact_days" || sortKey === "risk_score" ? 1 : -1;
+      return (a[sortKey] - b[sortKey]) * dir;
+    });
     const dir = sortKey === "rank" || sortKey === "cost_impact_pct" || sortKey === "transit_impact_days" || sortKey === "risk_score" ? 1 : -1;
-    list.sort((a, b) => (a[sortKey] - b[sortKey]) * dir);
-    return list;
-  }, [recs, catFilter, hideInfeasible, feasible, sortKey]);
+    return list.sort((a, b) => (a[sortKey] - b[sortKey]) * dir);
+  }, [recs, catFilter, sortKey]);
 
   if (err) return <ApiError retry={load} />;
 
   return (
     <>
       <PageHeader
-        eyebrow="Module 3 · Decision Workbench"
-        title="Scenario Planning & Optimization"
-        desc="Evaluate future-state logistics and sustainability strategies before committing capital. Every alternative is scored on cost, emissions, lead time, risk and working capital — then ranked by a single Decision Score."
+        eyebrow="AI Optimization Recommendations"
+        title="AI Optimization Recommendations"
+        desc="AI analyzes your logistics network, ranks the best options, and surfaces the highest-impact opportunities for cost, emissions, lead-time, and risk."
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <Select value={product} onChange={(e) => setProduct(e.target.value)} aria-label="Product family">
@@ -174,24 +160,21 @@ export default function ScenariosPage() {
 
       {!data ? <Spinner label="Generating and ranking alternatives…" /> : (
         <div className="space-y-5">
+          <AiRecommendationCenter
+            recs={recs}
+            selected={selected}
+            onSelect={setSelected}
+            funnel={data.funnel}
+          />
+
           <RecommendationSummary rec={recommended} total={recs.length} approval={recommended ? approvals[recommended.scenario_id] : ""} onApprove={setApprove} />
 
           {selRec && <ScenarioContext rec={selRec} detail={detail} />}
-
-          <ConstraintsPanel
-            maxLead={maxLead} setMaxLead={setMaxLead}
-            maxCost={maxCost} setMaxCost={setMaxCost}
-            minEm={minEm} setMinEm={setMinEm}
-            hideInfeasible={hideInfeasible} setHideInfeasible={setHideInfeasible}
-            active={constraintsActive} constrainedTop={constrainedTop}
-            onPick={(id: string) => setSelected(id)} feasibleCount={recs.filter(feasible).length}
-          />
 
           <Workbench
             rows={rows} selected={selected} onSelect={setSelected}
             sortKey={sortKey} setSortKey={setSortKey}
             categories={categories} catFilter={catFilter} setCatFilter={setCatFilter}
-            feasible={feasible} constraintsActive={constraintsActive}
           />
 
           {selRec && (
@@ -228,6 +211,47 @@ export default function ScenariosPage() {
   );
 }
 
+function AiRecommendationCenter({ recs, selected, onSelect, funnel }: { recs: any[]; selected: string | null; onSelect: (id: string) => void; funnel: any }) {
+  const total = recs.length;
+  const recommended = funnel?.recommended ?? 0;
+  const approved = funnel?.approved ?? 0;
+  const inExecution = funnel?.in_execution ?? 0;
+  return (
+    <Card className="border-brand/30 dark:border-cyan-400/30 bg-gradient-to-br from-brand-50/60 to-transparent dark:from-cyan-500/5">
+      <CardBody>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400 mb-2">AI Recommendation Center</div>
+            <div className="text-2xl font-bold text-ink-900 dark:text-white">Top logistics optimization opportunities</div>
+            <div className="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-2xl">AI analyzed {total} alternatives and surfaced the highest-impact recommendations for cost, emissions, lead-time, and operational risk.</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Badge variant="slate">{total} opportunities</Badge>
+            <Badge variant="blue">{recommended} recommended</Badge>
+            <Badge variant="green">{approved} approved</Badge>
+            <Badge variant="amber">{inExecution} in execution</Badge>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 mt-4">
+          {recs.slice(0, 10).map((r) => (
+            <button key={r.scenario_id} onClick={() => onSelect(r.scenario_id)} className={`rounded-2xl border p-4 text-left transition ${selected === r.scenario_id ? "border-brand bg-brand-50 dark:border-cyan-400 dark:bg-cyan-500/10" : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50"}`}>
+              <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400 mb-2">Recommendation #{r.rank}</div>
+              <div className="font-semibold text-ink-900 dark:text-white truncate">{r.name}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 mb-3">{r.category}</div>
+              <div className="grid gap-1 text-[11px] text-slate-600 dark:text-slate-400">
+                <div>Score {Math.round(r.decision_score)}</div>
+                <div>Cost Δ {r.cost_impact_pct >= 0 ? "+" : ""}{fmtNum(r.cost_impact_pct, 1)}%</div>
+                <div>Emissions Δ −{fmtNum(r.emissions_reduction_pct, 1)}%</div>
+                <div>Lead Δ {r.transit_impact_days >= 0 ? "+" : ""}{fmtNum(r.transit_impact_days, 1)} d</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 /* ── Recommendation Summary (spec §141) ─────────────────────────────────────── */
 function RecommendationSummary({ rec, total, approval, onApprove }: { rec: any; total: number; approval?: string; onApprove: (id: string, v: string) => void }) {
   if (!rec) return null;
@@ -238,6 +262,7 @@ function RecommendationSummary({ rec, total, approval, onApprove }: { rec: any; 
       <CardBody>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">Recommendation #{rec.rank} · AI-optimized</div>
             <div className="flex items-center gap-2 mb-1">
               <Badge variant="green">★ Recommended (emissions-first)</Badge>
               <Badge variant={CAT_VARIANT[rec.category] ?? "slate"}>{rec.category}</Badge>
@@ -273,6 +298,10 @@ function RecommendationSummary({ rec, total, approval, onApprove }: { rec: any; 
           <MiniStat label="Investment" value={fmtUSD(rec.investment_usd)} good={rec.investment_usd === 0} neutral />
           <MiniStat label="Risk Score" value={`${fmtNum(rec.risk_score)} · ${rec.risk_rating}`} good={rec.risk_score < 35} neutral={rec.risk_score >= 35 && rec.risk_score < 65} />
         </div>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Button size="sm" variant="secondary" onClick={() => window.alert(`Saved scenario ${rec.scenario_id}`)}>Save as Scenario</Button>
+          <Button size="sm" onClick={() => onApprove(rec.scenario_id, "APPROVE")}>Approve Scenario</Button>
+        </div>
         <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-3">
           Selected as the best balanced outcome among {total} evaluated alternatives · baseline {fmtUSD(b?.annual_freight_usd)} freight / {fmtCO2(b?.annual_co2e)} → future {fmtUSD(f?.annual_freight_usd)} / {fmtCO2(f?.annual_co2e)}.
         </div>
@@ -303,64 +332,8 @@ function ScenarioContext({ rec, detail }: { rec: any; detail: any }) {
   );
 }
 
-/* ── Constraints Engine (spec §32 / §147–148) ───────────────────────────────── */
-function ConstraintsPanel(props: any) {
-  const { maxLead, setMaxLead, maxCost, setMaxCost, minEm, setMinEm,
-    hideInfeasible, setHideInfeasible, active, constrainedTop, onPick, feasibleCount } = props;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Optimization Constraints</CardTitle>
-        <div className="text-[11px] text-slate-400">Filter alternatives to those that respect the business guardrails</div>
-      </CardHeader>
-      <CardBody className="grid md:grid-cols-4 gap-4 items-end">
-        <Field label={`Max lead-time increase: ${maxLead >= 99 ? "any" : `${maxLead} d`}`}>
-          <input type="range" min={0} max={20} value={Math.min(maxLead, 20)} onChange={(e) => setMaxLead(Number(e.target.value) >= 20 ? 99 : Number(e.target.value))} className="w-full accent-brand" />
-        </Field>
-        <Field label={`Max cost increase: ${maxCost >= 99 ? "any" : `${maxCost}%`}`}>
-          <input type="range" min={-10} max={20} value={Math.min(maxCost, 20)} onChange={(e) => setMaxCost(Number(e.target.value) >= 20 ? 99 : Number(e.target.value))} className="w-full accent-brand" />
-        </Field>
-        <Field label={`Min emission reduction: ${minEm}%`}>
-          <input type="range" min={0} max={40} value={minEm} onChange={(e) => setMinEm(Number(e.target.value))} className="w-full accent-brand" />
-        </Field>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-            <input type="checkbox" checked={hideInfeasible} onChange={(e) => setHideInfeasible(e.target.checked)} className="accent-brand" />
-            Hide infeasible alternatives
-          </label>
-          <Button size="sm" variant="secondary" onClick={() => { setMaxLead(99); setMaxCost(99); setMinEm(0); setHideInfeasible(false); }}>Reset</Button>
-        </div>
-      </CardBody>
-      {active && (
-        <div className="px-5 pb-4 -mt-1">
-          {constrainedTop ? (
-            <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2 flex-wrap">
-              <Badge variant="green">Constrained pick</Badge>
-              <span className="font-semibold text-ink-900 dark:text-white">{constrainedTop.name}</span>
-              <span>(score {Math.round(constrainedTop.decision_score)}, {fmtPct(constrainedTop.emissions_reduction_pct)} emissions, {fmtUSD(constrainedTop.annual_savings_usd)} savings)</span>
-              <button className="text-brand dark:text-cyan-400 underline" onClick={() => onPick(constrainedTop.scenario_id)}>select</button>
-              <span className="text-slate-400">· {feasibleCount} of alternatives feasible</span>
-            </div>
-          ) : (
-            <div className="text-xs text-danger">No alternative satisfies all constraints — relax a guardrail.</div>
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1.5">{label}</div>
-      {children}
-    </div>
-  );
-}
-
 /* ── Alternative Comparison Workbench (spec §143) ───────────────────────────── */
-function Workbench({ rows, selected, onSelect, sortKey, setSortKey, categories, catFilter, setCatFilter, feasible, constraintsActive }: any) {
+function Workbench({ rows, selected, onSelect, sortKey, setSortKey, categories, catFilter, setCatFilter }: any) {
   const cols: { key: SortKey; label: string; align?: string }[] = [
     { key: "rank", label: "#" },
     { key: "decision_score", label: "Score", align: "right" },
@@ -397,14 +370,13 @@ function Workbench({ rows, selected, onSelect, sortKey, setSortKey, categories, 
             </thead>
             <tbody>
               {rows.map((r: any) => {
-                const ok = feasible(r);
                 const sel = r.scenario_id === selected;
                 return (
                   <tr key={r.scenario_id}
                     onClick={() => onSelect(r.scenario_id)}
                     className={`border-b border-slate-50 dark:border-slate-900 cursor-pointer transition-colors ${
                       sel ? "bg-brand-50 dark:bg-cyan-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-900/60"
-                    } ${constraintsActive && !ok ? "opacity-40" : ""}`}>
+                    }`}>
                     <td className="px-3 py-2.5 text-slate-400 numeric">{r.rank}</td>
                     <td className={`px-3 py-2.5 text-right font-bold numeric ${scoreColor(r.decision_score)}`}>{Math.round(r.decision_score)}</td>
                     <td className={`px-3 py-2.5 text-right numeric ${r.cost_impact_pct <= 0 ? "text-positive" : "text-danger"}`}>{r.cost_impact_pct > 0 ? "+" : ""}{fmtNum(r.cost_impact_pct, 1)}%</td>
@@ -661,7 +633,7 @@ function AlternativesEvaluated({ recs, selected, onSelect }: { recs: any[]; sele
   const rejected = recs.filter((r) => r.category === "Rejected").slice(0, 5);
   return (
     <Card>
-      <CardHeader><CardTitle>Alternatives Evaluated — Transparency</CardTitle><div className="text-[11px] text-slate-400">click any scenario to compare the options within its decision family</div></CardHeader>
+      <CardHeader><CardTitle>Alternatives Evaluated By AI</CardTitle><div className="text-[11px] text-slate-400">Click any scenario to explore the top AI-evaluated network alternatives.</div></CardHeader>
       <CardBody className="grid lg:grid-cols-2 gap-6">
         <div>
           <div className="text-xs font-semibold text-positive uppercase tracking-wide mb-2">Top considered</div>
