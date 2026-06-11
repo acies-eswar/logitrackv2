@@ -68,7 +68,6 @@ export default function DecisionHub() {
   return (
     <>
       <PageHeader
-        eyebrow="Module 4 · Capital Allocation"
         title="Executive Decision Hub"
         desc="Prioritize logistics and sustainability investments by business impact, emissions reduction and financial return. Every opportunity competes against every other."
         actions={
@@ -76,20 +75,18 @@ export default function DecisionHub() {
         }
       />
 
-      {/* Executive KPI strip — 8 cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         <KPI label="Portfolio Savings" value={fmtUSD(metrics.savings)} accent="green" desc="annual, approved" />
-        <KPI label="Emissions Reduction" value={fmtCO2(metrics.emRed)} accent="green" desc="annual CO₂e" />
         <KPI label="Investment Required" value={fmtUSD(metrics.invest)} accent="amber" desc="one-time" />
         <KPI label="Portfolio ROI" value={fmtPct(metrics.roi, 0)} accent="blue" desc="benefit ÷ invest" />
         <KPI label="Portfolio NPV" value={fmtUSD(metrics.npv)} accent="blue" desc="Σ P50 NPV" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <KPI label="Emissions Reduction" value={fmtCO2(metrics.emRed)} accent="green" desc="annual CO₂e" />
         <KPI label="Carbon Cost Avoided" value={fmtUSD(metrics.carbonAvoided)} accent="green" desc={`@ $${carbon}/t`} />
         <KPI label="Scenarios Approved" value={`${Object.values(queue).filter(isApproved).length} / ${scen.length}`} desc="approved by you" />
         <KPI label="Strategic Readiness" value={fmtNum(metrics.readiness)} accent="blue" desc="avg decision score" />
       </div>
-
-      {/* Opportunity funnel */}
-      <Funnel funnel={hub.funnel} />
 
       {/* Top initiative */}
       {rec && <TopInitiative rec={rec} carbon={carbon} />}
@@ -108,12 +105,6 @@ export default function DecisionHub() {
 
       {/* Portfolio ranking */}
       <PortfolioRanking scen={scen} />
-
-      {/* Decision queue */}
-      <DecisionQueue scen={scen} queue={queue} />
-
-      {/* Narrative */}
-      <ExecutiveNarrative scen={scen} approved={approved} metrics={metrics} rec={rec} />
     </>
   );
 }
@@ -241,12 +232,15 @@ function PrioritizationMatrix({ scen }: { scen: any[] }) {
 function SustainabilityImpact({ scen, approved, metrics, carbon }: any) {
   const byLever = useMemo(() => {
     const m: Record<string, number> = {};
-    approved.forEach((s: any) => {
+    const source = approved.length
+      ? approved
+      : scen.filter((s: any) => Math.max(0, -s.emissions_impact_co2e) > 0).slice(0, 8);
+    source.forEach((s: any) => {
       const k = s.recommendation_category ?? s.lever ?? "Other";
       m[k] = (m[k] ?? 0) + Math.max(0, -s.emissions_impact_co2e);
     });
     return Object.entries(m).map(([name, v]) => ({ name, Reduction: Math.round(v) })).sort((a, b) => b.Reduction - a.Reduction);
-  }, [approved]);
+  }, [approved, scen]);
 
   return (
     <Card>

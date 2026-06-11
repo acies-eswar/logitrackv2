@@ -5,7 +5,6 @@ import Link from "next/link";
 import { api, fmtUSD, fmtCO2, fmtNum, fmtPct } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Segmented, Select } from "@/components/ui";
 import { NetworkMap } from "@/components/charts/network-map";
-import { BarChartCard } from "@/components/charts";
 
 /* Module 1 — Network Intelligence & Journey Visibility (LogiTrack V3.0).
    "A supply chain journey explorer", not a network dashboard. */
@@ -66,22 +65,22 @@ export default function NetworkPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Module 1 · Journey Explorer"
         title="Network Intelligence"
         desc="Understand how products move through your supply chain and where emissions, cost and risk originate — before changing the future state."
         actions={<Segmented options={CARBON_PRICES.map((c) => ({ value: String(c), label: `$${c}` }))} value={String(carbon)} onChange={(v) => setCarbon(Number(v))} />}
       />
 
-      {/* 8-KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         <KPI label="Total Journeys" value={fmtNum(sum.entity_counts.lanes)} desc="active lanes" />
         <KPI label="Annual Freight" value={fmtUSD(sum.total_annual_freight_usd)} accent="blue" />
-        <KPI label="Annual Emissions" value={fmtCO2(sum.total_annual_co2e)} accent="green" />
-        <KPI label="Emission Intensity" value={`${fmtNum(sum.network_intensity_g_per_tkm, 1)}`} desc="gCO₂e/tkm" />
         <KPI label="Avg Lead Time" value={`${fmtNum(derived.avgLead, 1)} d`} />
+        <KPI label="Network Risk" value={`${derived.netRisk}`} accent={derived.netRisk < 40 ? "green" : derived.netRisk < 65 ? "amber" : "red"} desc="0-100" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <KPI label="Annual Emissions" value={fmtCO2(sum.total_annual_co2e)} accent="green" />
+        <KPI label="Emission Intensity" value={`${fmtNum(sum.network_intensity_g_per_tkm, 1)}`} desc="gCO2e/tkm" />
         <KPI label="Carbon Cost Exposure" value={fmtUSD(derived.carbonExposure)} accent="amber" desc={`@ $${carbon}/t`} />
         <KPI label="Reduction Potential" value={fmtPct(derived.best)} accent="green" desc="best lever" />
-        <KPI label="Network Risk" value={`${derived.netRisk}`} accent={derived.netRisk < 40 ? "green" : derived.netRisk < 65 ? "amber" : "red"} desc="0–100" />
       </div>
 
       {/* Network map — click any facility to trace its end-to-end route */}
@@ -96,15 +95,15 @@ export default function NetworkPage() {
       {/* by-mode */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <Card><CardHeader><CardTitle>Emissions by Mode</CardTitle></CardHeader><CardBody>
-          <BarChartCard data={modeData} x="name" height={220} bars={[{ key: "co2e", name: "Annual CO₂e (t)", color: "#0e9f6e" }]} />
+          <ModeBars data={modeData} valueKey="co2e" color="#0e9f6e" formatter={fmtCO2} />
         </CardBody></Card>
         <Card><CardHeader><CardTitle>Cost by Mode</CardTitle></CardHeader><CardBody>
-          <BarChartCard data={modeData} x="name" currency height={220} bars={[{ key: "freight", name: "Annual Freight (USD)", color: "#1d4ed8" }]} />
+          <ModeBars data={modeData} valueKey="freight" color="#1d4ed8" formatter={fmtUSD} />
         </CardBody></Card>
       </div>
 
       {/* flows + hotspots */}
-      <div className="grid lg:grid-cols-2 gap-5 mb-6">
+      <div className="grid lg:grid-cols-2 gap-5 mb-6 items-start">
         <Card>
           <CardHeader><CardTitle>Flow Analysis by Segment</CardTitle></CardHeader>
           <CardBody className="p-0">
@@ -128,7 +127,7 @@ export default function NetworkPage() {
         <Card>
           <CardHeader><CardTitle>{hotView === "cost" ? "Cost" : "Emissions"} Hotspots: Top 10</CardTitle>
             <Segmented value={hotView} onChange={setHotView} options={[{ value: "cost", label: "Cost" }, { value: "emissions", label: "Emissions" }]} /></CardHeader>
-          <CardBody className="p-0">
+          <CardBody className="p-0 max-h-[308px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
                 <th className="px-5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Lane</th>
@@ -277,6 +276,36 @@ function FlowRow({ f }: { f: any }) {
       <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtUSD(f.freight_usd)}</td>
       <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtCO2(f.co2e)}</td>
     </tr>
+  );
+}
+
+function ModeBars({ data, valueKey, color, formatter }: { data: any[]; valueKey: "co2e" | "freight"; color: string; formatter: (n: number) => string }) {
+  const rows = data
+    .filter((d) => (d[valueKey] ?? 0) > 0)
+    .sort((a, b) => (b[valueKey] ?? 0) - (a[valueKey] ?? 0));
+  const max = Math.max(...rows.map((r) => r[valueKey] ?? 0), 1);
+
+  if (rows.length === 0) {
+    return <div className="py-10 text-center text-sm text-slate-400">No mode data available.</div>;
+  }
+
+  return (
+    <div className="space-y-3 min-h-[220px]">
+      {rows.map((row) => {
+        const value = row[valueKey] ?? 0;
+        return (
+          <div key={row.name}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-ink-900 dark:text-white">{row.name}</span>
+              <span className="numeric text-slate-600 dark:text-slate-300">{formatter(value)}</span>
+            </div>
+            <div className="h-3 rounded-full bg-slate-100 dark:bg-slate-800">
+              <div className="h-full rounded-full" style={{ width: `${Math.max(3, (value / max) * 100)}%`, background: color }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
