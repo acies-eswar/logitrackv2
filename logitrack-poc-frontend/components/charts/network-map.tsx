@@ -110,7 +110,7 @@ function continentPath(coords: [number, number][]): string {
   }).join(" ") + " Z";
 }
 
-export function NetworkMap({ nodes, edges }: { nodes: any[]; edges: any[] }) {
+export function NetworkMap({ nodes, edges, onSelect, selected }: { nodes: any[]; edges: any[]; onSelect?: (id: string) => void; selected?: string | null }) {
   const [mounted, setMounted] = useState(false);
   const [colorBy, setColorBy] = useState<"segment" | "mode">("segment");
   const [segFilter, setSegFilter] = useState<string>("all");
@@ -282,8 +282,10 @@ export function NetworkMap({ nodes, edges }: { nodes: any[]; edges: any[] }) {
                 key={n.id}
                 onMouseEnter={() => setHover(n.id)}
                 onMouseLeave={() => setHover(null)}
+                onClick={() => onSelect?.(n.id)}
                 style={{ cursor: "pointer" }}
               >
+                {selected === n.id && <circle cx={x} cy={y} r={r + 5} fill="none" stroke="#22d3ee" strokeWidth={2} />}
                 {nodeEl}
                 {showLabel && (
                   <text

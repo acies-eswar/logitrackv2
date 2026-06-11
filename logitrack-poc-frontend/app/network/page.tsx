@@ -24,6 +24,7 @@ export default function NetworkPage() {
   const [lanes, setLanes] = useState<any[]>([]);
   const [recs, setRecs] = useState<any>(null);
   const [hotView, setHotView] = useState<"cost" | "emissions">("cost");
+  const [selNode, setSelNode] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
   const load = useCallback(() => {
@@ -83,14 +84,14 @@ export default function NetworkPage() {
         <KPI label="Network Risk" value={`${derived.netRisk}`} accent={derived.netRisk < 40 ? "green" : derived.netRisk < 65 ? "amber" : "red"} desc="0–100" />
       </div>
 
-      {/* Journey Explorer — flagship */}
-      <JourneyExplorer carbon={carbon} best={derived.best} />
-
-      {/* Network map */}
+      {/* Network map — click any facility to trace its end-to-end route */}
       <Card className="mb-6">
-        <CardHeader><CardTitle>End-to-End Network Visualization</CardTitle><Badge variant="blue">{graph.nodes.length} nodes · {graph.edges.length} lanes</Badge></CardHeader>
-        <CardBody><NetworkMap nodes={graph.nodes} edges={graph.edges} /></CardBody>
+        <CardHeader><CardTitle>End-to-End Network Visualization</CardTitle><Badge variant="blue">click a facility to trace its route · {graph.nodes.length} nodes</Badge></CardHeader>
+        <CardBody><NetworkMap nodes={graph.nodes} edges={graph.edges} selected={selNode} onSelect={setSelNode} /></CardBody>
       </Card>
+
+      {/* Route explorer driven by map selection */}
+      <RouteExplorer graph={graph} selected={selNode} onClear={() => setSelNode(null)} />
 
       {/* by-mode */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
@@ -163,98 +164,67 @@ export default function NetworkPage() {
   );
 }
 
-/* ── Journey Explorer (spec §84–89) ─────────────────────────────────────────── */
-function JourneyExplorer({ carbon, best }: { carbon: number; best: number }) {
-  const [product, setProduct] = useState(PRODUCTS[0]);
-  const [journey, setJourney] = useState<any>(null);
-  const [stage, setStage] = useState<number | null>(null);
-  const [attr, setAttr] = useState<"emissions" | "cost" | "lead">("emissions");
+/* ── Route Explorer — end-to-end route through the facility clicked on the map ── */
+function buildRoute(graph: any, nodeId: string) {
+  const edges: any[] = graph?.edges ?? [];
+  const bestFrom = (id: string, used: Set<string>) =>
+    edges.filter((e) => e.from === id && !used.has(e.to)).sort((a, b) => (b.freight ?? 0) - (a.freight ?? 0))[0];
+  const bestTo = (id: string, used: Set<string>) =>
+    edges.filter((e) => e.to === id && !used.has(e.from)).sort((a, b) => (b.freight ?? 0) - (a.freight ?? 0))[0];
+  const down: any[] = []; { const used = new Set([nodeId]); let cur = nodeId; for (let i = 0; i < 5; i++) { const e = bestFrom(cur, used); if (!e) break; down.push(e); used.add(e.to); cur = e.to; } }
+  const up: any[] = []; { const used = new Set([nodeId]); let cur = nodeId; for (let i = 0; i < 5; i++) { const e = bestTo(cur, used); if (!e) break; up.unshift(e); used.add(e.from); cur = e.from; } }
+  return [...up, ...down];
+}
 
-  useEffect(() => { setJourney(null); setStage(null); api.networkJourney(product).then(setJourney).catch(() => setJourney(null)); }, [product]);
+function RouteExplorer({ graph, selected, onClear }: { graph: any; selected: string | null; onClear: () => void }) {
+  const nodeById = useMemo(() => Object.fromEntries((graph?.nodes ?? []).map((n: any) => [n.id, n])), [graph]);
+  const route = useMemo(() => (selected ? buildRoute(graph, selected) : []), [graph, selected]);
+  const node = selected ? nodeById[selected] : null;
 
-  const tces: any[] = journey?.tces ?? [];
-  const k = journey?.kpis ?? {};
-  const attrVal = (t: any) => attr === "emissions" ? (t.per_unit_transport_kg_co2e ?? 0) + (t.per_unit_handling_kg_co2e ?? 0) : attr === "cost" ? (t.per_unit_cost_usd ?? 0) : (t.transit_days ?? 0);
-  const attrTotal = tces.reduce((a, t) => a + attrVal(t), 0) || 1;
-
-  const currentT = k.total_per_unit_t_co2e ?? 0;
-  const bestT = currentT * (1 - best / 100);
+  const totalCost = route.reduce((a, e) => a + (e.freight ?? 0), 0);
+  const totalCo2 = route.reduce((a, e) => a + (e.co2e ?? 0), 0);
 
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle>Journey Explorer — how a {product} arrives</CardTitle>
-        <div className="flex items-center gap-2">
-          <Select value={product} onChange={(e) => setProduct(e.target.value)} className="py-1.5 text-xs">
-            {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
-          </Select>
-          <Segmented value={attr} onChange={(v) => setAttr(v as any)} options={[{ value: "emissions", label: "Emissions" }, { value: "cost", label: "Cost" }, { value: "lead", label: "Lead time" }]} />
-        </div>
+        <CardTitle>{node ? `Route through ${node.id}` : "Product Journey / Route Explorer"}</CardTitle>
+        {node
+          ? <div className="flex items-center gap-2"><Badge variant="blue">{node.role}</Badge><button className="text-xs text-slate-400 underline" onClick={onClear}>clear</button></div>
+          : <div className="text-[11px] text-slate-400">click any facility on the map above</div>}
       </CardHeader>
       <CardBody>
-        {tces.length === 0 ? <Spinner label="Tracing journey…" /> : (
+        {!node ? (
+          <div className="py-8 text-center text-slate-400 text-sm">Select a supplier, port, plant or DC on the map to trace its end-to-end route.</div>
+        ) : route.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-sm">No connected route found for this facility.</div>
+        ) : (
           <>
-            {/* journey KPI bar */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-              <Mini label="Journey Cost / unit" value={fmtUSD(k.total_per_unit_cost_usd)} />
-              <Mini label="Journey Emissions / unit" value={`${fmtNum(k.total_per_unit_kg_co2e, 1)} kg`} />
-              <Mini label="Lead Time" value={`${fmtNum(k.total_transit_days, 1)} d`} />
-              <Mini label="Legs / Modes" value={`${k.legs ?? tces.length} · ${k.modes ?? "—"}`} />
-              <Mini label="Border Crossings" value={String(k.border_crossings ?? "—")} />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+              <Mini label="Stages" value={String(route.length)} />
+              <Mini label="Route Freight" value={fmtUSD(totalCost)} />
+              <Mini label="Route Emissions" value={fmtCO2(totalCo2)} />
             </div>
-
-            {/* horizontal stage timeline */}
             <div className="flex items-stretch gap-1 overflow-x-auto pb-2">
-              {tces.map((t, i) => {
-                const share = (attrVal(t) / attrTotal) * 100;
+              {route.map((e, i) => {
+                const share = totalCo2 > 0 ? (e.co2e / totalCo2) * 100 : 0;
                 return (
                   <div key={i} className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => setStage(stage === i ? null : i)}
-                      className={`rounded-lg border px-3 py-2 min-w-[150px] text-left transition-all ${stage === i ? "border-brand/50 bg-brand-50 dark:border-cyan-400/50 dark:bg-cyan-500/10" : "border-slate-200 dark:border-slate-700 hover:border-brand/30 bg-white dark:bg-slate-900/50"}`}>
-                      <div className="text-[10px] uppercase tracking-wide text-slate-400">{t.segment}</div>
-                      <div className="text-xs font-semibold text-ink-900 dark:text-white truncate max-w-[150px]">{t.origin} → {t.destination}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t.mode} · {t.carrier}</div>
-                      <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div className="h-full rounded-full bg-gradient-to-r from-brand to-brand-600 dark:from-cyan-400 dark:to-cyan-600" style={{ width: `${Math.max(3, share)}%` }} />
+                    <div className={`rounded-lg border px-3 py-2 min-w-[160px] ${e.from === selected || e.to === selected ? "border-brand/40 bg-brand-50/50 dark:border-cyan-400/40 dark:bg-cyan-500/10" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50"}`}>
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400">{e.segment}</div>
+                      <div className="text-xs font-semibold text-ink-900 dark:text-white truncate max-w-[160px]">{e.from} → {e.to}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{e.mode}{e.distance ? ` · ${fmtNum(e.distance)} km` : ""}</div>
+                      <div className="flex justify-between text-[11px] mt-1">
+                        <span className="text-brand dark:text-cyan-400 numeric">{fmtUSD(e.freight)}</span>
+                        <span className="text-positive numeric">{fmtCO2(e.co2e)}</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1">{fmtNum(share, 0)}% of {attr}</div>
-                    </button>
-                    {i < tces.length - 1 && <span className="text-slate-300 dark:text-slate-600">→</span>}
+                      <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div className="h-full rounded-full bg-positive" style={{ width: `${Math.max(3, share)}%` }} /></div>
+                    </div>
+                    {i < route.length - 1 && <span className="text-slate-300 dark:text-slate-600">→</span>}
                   </div>
                 );
               })}
             </div>
-
-            {/* stage breakdown */}
-            {stage !== null && tces[stage] && (
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-6 gap-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
-                <Mini label="Distance" value={`${fmtNum(tces[stage].distance_km)} km`} />
-                <Mini label="Mode" value={tces[stage].mode} />
-                <Mini label="Carrier" value={tces[stage].carrier} />
-                <Mini label="Transit" value={`${fmtNum(tces[stage].transit_days, 1)} d`} />
-                <Mini label="Transport CO₂e" value={`${fmtNum(tces[stage].per_unit_transport_kg_co2e, 2)} kg`} />
-                <Mini label="Cost / unit" value={fmtUSD(tces[stage].per_unit_cost_usd)} />
-              </div>
-            )}
-
-            {/* current vs best state */}
-            <div className="mt-4 grid md:grid-cols-3 gap-3">
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
-                <div className="text-[11px] uppercase tracking-wide text-slate-400">Current</div>
-                <div className="text-lg font-bold text-ink-900 dark:text-white numeric">{fmtNum(currentT, 3)} t/unit</div>
-              </div>
-              <div className="rounded-lg border border-positive/30 bg-positive/5 dark:bg-positive/10 p-3">
-                <div className="text-[11px] uppercase tracking-wide text-positive">Best achievable</div>
-                <div className="text-lg font-bold text-positive numeric">{fmtNum(bestT, 3)} t/unit</div>
-              </div>
-              <div className="rounded-lg border border-brand/30 bg-brand-50/50 dark:bg-cyan-500/5 p-3 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-brand dark:text-cyan-400">Reduction potential</div>
-                  <div className="text-lg font-bold text-brand dark:text-cyan-400 numeric">{fmtPct(best)}</div>
-                </div>
-                <Link href="/scenarios"><span className="text-xs text-brand dark:text-cyan-400 underline">Investigate →</span></Link>
-              </div>
-            </div>
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">Route assembled from the highest-volume connected lanes upstream and downstream of the selected facility.</div>
           </>
         )}
       </CardBody>
