@@ -43,6 +43,39 @@ function scoreColor(s: number) {
   return s >= 80 ? "text-positive" : s >= 65 ? "text-brand dark:text-cyan-400" : s >= 50 ? "text-warning" : "text-danger";
 }
 
+// What the recommendation changes in the end-to-end flow (parsed from the scenario name).
+function changeOf(rec: any): { lever: string; from?: string; to?: string } {
+  const lever = ({
+    route: "Route", carrier: "Carrier", modal_shift: "Mode", supplier: "Supplier",
+    plant_allocation: "Plant", dc_allocation: "Distribution", hybrid: "Supplier + Mode + Carrier",
+  } as Record<string, string>)[rec?.type] ?? "Network";
+  const m = (rec?.name ?? "").match(/([A-Za-z .()→\-]+?)\s*(?:→|->)\s*([A-Za-z .()]+)/);
+  if (m) return { lever, from: m[1].trim(), to: m[2].replace(/\(.*$/, "").trim() };
+  return { lever };
+}
+
+const APPROVAL_VARIANT: Record<string, "green" | "blue" | "red" | "slate"> = {
+  APPROVE: "green", PILOT: "blue", DECLINE: "red", "": "slate",
+};
+function ApprovalBar({ id, value, onSet, size = "sm" }: { id: string; value?: string; onSet: (id: string, v: string) => void; size?: "sm" | "xs" }) {
+  const opts: { v: string; label: string; cls: string }[] = [
+    { v: "APPROVE", label: "Approve", cls: "text-positive border-positive/40 hover:bg-positive/10" },
+    { v: "PILOT", label: "Pilot", cls: "text-brand dark:text-cyan-400 border-brand/40 hover:bg-brand/10" },
+    { v: "DECLINE", label: "Reject", cls: "text-danger border-danger/40 hover:bg-danger/10" },
+  ];
+  const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs";
+  return (
+    <div className="inline-flex gap-1" onClick={(e) => e.stopPropagation()}>
+      {opts.map((o) => (
+        <button key={o.v} onClick={() => onSet(id, o.v)}
+          className={`${pad} rounded-md border font-medium transition-colors ${value === o.v ? "bg-current/10 " + o.cls : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300"} ${value === o.v ? o.cls : ""}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type SortKey = "rank" | "decision_score" | "emissions_reduction_pct" | "cost_impact_pct" | "transit_impact_days" | "risk_score" | "investment_usd";
 
 export default function ScenariosPage() {
@@ -63,6 +96,9 @@ export default function ScenariosPage() {
   // Emissions-first by default (spec §13/§94) — emissions reduction leads the ranking.
   const [sortKey, setSortKey] = useState<SortKey>("emissions_reduction_pct");
   const [catFilter, setCatFilter] = useState("All");
+  // manual approval workflow (spec §38/§161): the user approves/pilots/rejects each recommendation
+  const [approvals, setApprovals] = useState<Record<string, string>>({});
+  const setApprove = (id: string, v: string) => setApprovals((a) => ({ ...a, [id]: a[id] === v ? "" : v }));
 
   const load = useCallback(() => {
     setErr(false); setData(null);
@@ -137,7 +173,7 @@ export default function ScenariosPage() {
 
       {!data ? <Spinner label="Generating and ranking alternatives…" /> : (
         <div className="space-y-5">
-          <RecommendationSummary rec={recommended} total={recs.length} />
+          <RecommendationSummary rec={recommended} total={recs.length} approval={recommended ? approvals[recommended.scenario_id] : ""} onApprove={setApprove} />
 
           {selRec && <ScenarioContext rec={selRec} detail={detail} />}
 
@@ -164,7 +200,7 @@ export default function ScenariosPage() {
             </div>
           )}
 
-          {selRec && <AlternativesConsidered recs={recs} selRec={selRec} onSelect={setSelected} />}
+          {selRec && <AlternativesConsidered recs={recs} selRec={selRec} onSelect={setSelected} approvals={approvals} onApprove={setApprove} />}
 
           <JourneyComparison journey={journey} rec={selRec} product={product} />
 
@@ -192,16 +228,17 @@ export default function ScenariosPage() {
 }
 
 /* ── Recommendation Summary (spec §141) ─────────────────────────────────────── */
-function RecommendationSummary({ rec, total }: { rec: any; total: number }) {
+function RecommendationSummary({ rec, total, approval, onApprove }: { rec: any; total: number; approval?: string; onApprove: (id: string, v: string) => void }) {
   if (!rec) return null;
   const b = rec.baseline, f = rec.future_state;
+  const chg = changeOf(rec);
   return (
     <Card className="border-brand/30 dark:border-cyan-400/30 bg-gradient-to-br from-brand-50/60 to-transparent dark:from-cyan-500/5">
       <CardBody>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Badge variant="green">★ Best Overall</Badge>
+              <Badge variant="green">★ Recommended (emissions-first)</Badge>
               <Badge variant={CAT_VARIANT[rec.category] ?? "slate"}>{rec.category}</Badge>
               <Badge variant={VERDICT_VARIANT[rec.verdict]}>{VERDICT_LABEL[rec.verdict]}</Badge>
             </div>
@@ -211,6 +248,21 @@ function RecommendationSummary({ rec, total }: { rec: any; total: number }) {
           <div className="text-center shrink-0">
             <div className={`text-5xl font-extrabold numeric ${scoreColor(rec.decision_score)}`}>{Math.round(rec.decision_score)}</div>
             <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-1">Decision Score</div>
+          </div>
+        </div>
+
+        {/* what we're changing in the end-to-end flow + approval action */}
+        <div className="flex items-center justify-between gap-3 flex-wrap mt-3 rounded-lg border border-slate-200/70 dark:border-slate-700/60 px-3 py-2 bg-white/60 dark:bg-slate-900/40">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Change</span>
+            <Badge variant="slate">{chg.lever}</Badge>
+            {chg.from && chg.to && (
+              <span className="font-medium text-ink-900 dark:text-white">{chg.from} <span className="text-brand dark:text-cyan-400">→</span> {chg.to}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">Your decision:</span>
+            <ApprovalBar id={rec.scenario_id} value={approval} onSet={onApprove} />
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
@@ -444,8 +496,11 @@ function JourneyComparison({ journey, rec, product }: { journey: any; rec: any; 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>End-to-End Journey Comparison</CardTitle>
-        <div className="text-[11px] text-slate-400">Representative {product} journey · current vs future under {rec?.name ?? "selected scenario"}</div>
+        <CardTitle>End-to-End Journey — what we're changing</CardTitle>
+        <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+          <span>Representative {product} journey · {rec?.name ?? "selected scenario"}</span>
+          {rec && (() => { const c = changeOf(rec); return c.from && c.to ? <Badge variant="blue">{c.lever}: {c.from} → {c.to}</Badge> : <Badge variant="slate">{c.lever} change</Badge>; })()}
+        </div>
       </CardHeader>
       <CardBody>
         {tces.length === 0 ? (
@@ -520,12 +575,29 @@ function BaselineVsFuture({ detail }: { detail: any }) {
   );
 }
 
+// Five lever sub-scores as a compact sparkline (Sustainability·Financial·Operational·Risk·Strategic).
+function LeverBars({ s }: { s: any }) {
+  const dims = [
+    { k: "sustainability", c: "#0e9f6e" }, { k: "financial", c: "#1d4ed8" },
+    { k: "operational", c: "#6366f1" }, { k: "risk", c: "#d97706" }, { k: "strategic", c: "#8b5cf6" },
+  ];
+  return (
+    <div className="flex items-end justify-center gap-0.5 h-7" title="Sustainability · Financial · Operational · Risk · Strategic">
+      {dims.map((d) => {
+        const v = Math.max(0, Math.min(100, s?.[d.k] ?? 0));
+        return <div key={d.k} className="w-1.5 rounded-sm" style={{ height: `${Math.max(8, v)}%`, background: d.c, opacity: 0.85 }} />;
+      })}
+    </div>
+  );
+}
+
 /* ── Alternatives Considered for THIS recommendation (same decision family) ──
    e.g. when "Ocean → Rail Modal Shift" is selected, every other modal-shift option
    (Ocean → Air, Road → Rail, Air → Ocean …) is shown, best floated to the top. ── */
-function AlternativesConsidered({ recs, selRec, onSelect }: { recs: any[]; selRec: any; onSelect: (id: string) => void }) {
+function AlternativesConsidered({ recs, selRec, onSelect, approvals, onApprove }: { recs: any[]; selRec: any; onSelect: (id: string) => void; approvals: Record<string, string>; onApprove: (id: string, v: string) => void }) {
+  // emissions-first within the family (spec §13) — best emissions reduction floats to top.
   const family = useMemo(
-    () => recs.filter((r) => r.type === selRec.type).sort((a, b) => b.decision_score - a.decision_score),
+    () => recs.filter((r) => r.type === selRec.type).sort((a, b) => b.emissions_reduction_pct - a.emissions_reduction_pct),
     [recs, selRec.type],
   );
   if (family.length <= 1) return null;
@@ -542,17 +614,19 @@ function AlternativesConsidered({ recs, selRec, onSelect }: { recs: any[]; selRe
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
-              <th className="px-3 py-2.5 text-left">Option</th>
+              <th className="px-3 py-2.5 text-left">Option · flow change</th>
+              <th className="px-3 py-2.5 text-center">Levers (S·F·O·R·St)</th>
               <th className="px-3 py-2.5 text-right">Emissions</th>
               <th className="px-3 py-2.5 text-right">Cost Δ</th>
               <th className="px-3 py-2.5 text-right">Lead Δ</th>
               <th className="px-3 py-2.5 text-right">Score</th>
-              <th className="px-3 py-2.5 text-left">Status</th>
+              <th className="px-3 py-2.5 text-center">Decision</th>
             </tr></thead>
             <tbody>
               {family.map((r, i) => {
                 const isBest = i === 0;
                 const isSel = r.scenario_id === selRec.scenario_id;
+                const chg = changeOf(r);
                 return (
                   <tr key={r.scenario_id} onClick={() => onSelect(r.scenario_id)}
                     className={`border-b border-slate-50 dark:border-slate-900 cursor-pointer transition-colors ${isSel ? "bg-brand-50 dark:bg-cyan-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-900/60"}`}>
@@ -561,16 +635,14 @@ function AlternativesConsidered({ recs, selRec, onSelect }: { recs: any[]; selRe
                         {isBest && <span className="text-positive" title="Best in family">★</span>}
                         <span className="font-medium text-ink-900 dark:text-white">{r.name}</span>
                       </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">{chg.from && chg.to ? <>{chg.from} <span className="text-brand dark:text-cyan-400">→</span> {chg.to}</> : chg.lever + " change"}{!isBest && <> · {r.rejected_reason}</>}</div>
                     </td>
+                    <td className="px-3 py-2.5"><LeverBars s={r.sub_scores} /></td>
                     <td className="px-3 py-2.5 text-right numeric text-positive">−{fmtNum(r.emissions_reduction_pct, 1)}%</td>
                     <td className={`px-3 py-2.5 text-right numeric ${r.cost_impact_pct <= 0 ? "text-positive" : "text-danger"}`}>{r.cost_impact_pct > 0 ? "+" : ""}{fmtNum(r.cost_impact_pct, 1)}%</td>
                     <td className="px-3 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{r.transit_impact_days > 0 ? "+" : ""}{fmtNum(r.transit_impact_days, 1)}d</td>
                     <td className={`px-3 py-2.5 text-right font-bold numeric ${scoreColor(r.decision_score)}`}>{Math.round(r.decision_score)}</td>
-                    <td className="px-3 py-2.5">
-                      {isBest
-                        ? <Badge variant="green">Recommended</Badge>
-                        : <span className="text-[11px] text-slate-500 dark:text-slate-400">Considered · {best.decision_score - r.decision_score > 0 ? `−${Math.round(best.decision_score - r.decision_score)} vs best` : r.rejected_reason}</span>}
-                    </td>
+                    <td className="px-3 py-2.5 text-center"><ApprovalBar id={r.scenario_id} value={approvals[r.scenario_id]} onSet={onApprove} size="xs" /></td>
                   </tr>
                 );
               })}
