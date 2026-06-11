@@ -54,6 +54,8 @@ export const api = {
   sustByFacility: (cp = 75) => get<any[]>(`/sustainability/by-facility?carbon_price=${cp}`),
   sustByCategory: (cp = 75) => get<any[]>(`/sustainability/by-category?carbon_price=${cp}`),
   matrix: (cp = 75) => get<any[]>(`/sustainability/matrix?carbon_price=${cp}`),
+  // V3.0 — all end-to-end flows for a product family (segments, attribution, load factor)
+  productFlows: (product = "Refrigerator") => get<any>(`/sustainability/product-flows?product=${encodeURIComponent(product)}`),
   // Module 3 + 6
   scenarios: () => get<any[]>("/scenarios"),
   // V3.0 — ranked alternatives with Decision Score, categories, rationale, funnel

@@ -9,7 +9,7 @@ import { HBarList } from "@/components/charts";
 const DISPOSITION_STYLE: Record<string, { bg: string; text: string; border: string }> = {
   GROW:   { bg: "bg-positive/10",  text: "text-positive", border: "border-positive/30" },
   RETAIN: { bg: "bg-brand/10",     text: "text-brand",    border: "border-brand/30" },
-  FIX:    { bg: "bg-warning/10",   text: "text-warning",  border: "border-warning/30" },
+  IMPROVE:    { bg: "bg-warning/10",   text: "text-warning",  border: "border-warning/30" },
   EXIT:   { bg: "bg-danger/10",    text: "text-danger",   border: "border-danger/30" },
 };
 
@@ -63,15 +63,15 @@ export default function TransportationPage() {
 
   // Must be before early returns — hooks order must be stable
   const dispositionSummary = useMemo(() => {
-    const counts: Record<string, number> = { GROW: 0, RETAIN: 0, FIX: 0, EXIT: 0 };
-    const groups: Record<string, string[]> = { GROW: [], RETAIN: [], FIX: [], EXIT: [] };
+    const counts: Record<string, number> = { GROW: 0, RETAIN: 0, IMPROVE: 0, EXIT: 0 };
+    const groups: Record<string, string[]> = { GROW: [], RETAIN: [], IMPROVE: [], EXIT: [] };
     let spendAtRisk = 0, savingsOpportunity = 0;
     carriers.forEach((c) => {
       const d = c.disposition as string ?? "RETAIN";
-      const key = ["GROW","RETAIN","FIX","EXIT"].includes(d) ? d : "RETAIN";
+      const key = ["GROW","RETAIN","IMPROVE","EXIT"].includes(d) ? d : "RETAIN";
       counts[key] = (counts[key] ?? 0) + 1;
       groups[key].push(c.carrier);
-      if (key === "EXIT" || key === "FIX") spendAtRisk += c.annual_freight_usd ?? 0;
+      if (key === "EXIT" || key === "IMPROVE") spendAtRisk += c.annual_freight_usd ?? 0;
       if (key === "EXIT") savingsOpportunity += Math.max(0, (c.cost_per_shipment - (c.cost_per_shipment * 0.93)) * (c.shipments ?? 0));
     });
     return { counts, groups, spendAtRisk, savingsOpportunity };
@@ -113,15 +113,19 @@ export default function TransportationPage() {
         </CardHeader>
         <CardBody>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
-            {(["GROW","RETAIN","FIX","EXIT"] as const).map((d) => {
+            {(["GROW","RETAIN","IMPROVE","EXIT"] as const).map((d) => {
               const st = DISPOSITION_STYLE[d];
               const names: string[] = dispositionSummary.groups[d] ?? [];
               return (
-                <div key={d} className={`rounded-xl border p-4 ${st.bg} ${st.border}`}>
-                  <div className={`text-xs font-bold uppercase tracking-wider mb-1 ${st.text}`}>{d}</div>
-                  <div className={`text-3xl font-bold numeric ${st.text}`}>{dispositionSummary.counts[d] ?? 0}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {names.length > 0 ? names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "") : "—"}
+                <div key={d} className={`rounded-xl border p-4 ${st.bg} ${st.border} flex flex-col`}>
+                  <div className="flex items-baseline justify-between">
+                    <div className={`text-xs font-bold uppercase tracking-wider ${st.text}`}>{d}</div>
+                    <div className={`text-3xl font-bold numeric ${st.text}`}>{dispositionSummary.counts[d] ?? 0}</div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                    {names.length > 0 ? names.map((n) => (
+                      <span key={n} className="text-[11px] px-1.5 py-0.5 rounded bg-white/70 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/50">{n}</span>
+                    )) : <span className="text-xs text-slate-400">—</span>}
                   </div>
                 </div>
               );
@@ -188,7 +192,7 @@ export default function TransportationPage() {
                 const intensityDelta = c.intensity_vs_benchmark ?? 0;
                 const isSelected = selectedCarrier === c.carrier;
                 const disp = (c.disposition as string) ?? "RETAIN";
-                const dispKey = ["GROW","RETAIN","FIX","EXIT"].includes(disp) ? disp : "RETAIN";
+                const dispKey = ["GROW","RETAIN","IMPROVE","EXIT"].includes(disp) ? disp : "RETAIN";
                 const ds = DISPOSITION_STYLE[dispKey];
                 return (
                   <tr
@@ -377,7 +381,7 @@ function DecarbonizationOpportunities() {
 
 function CarrierDecisionPack({ pack }: { pack: any }) {
   const disp = pack.disposition as string;
-  const dispKey = ["GROW","RETAIN","FIX","EXIT"].includes(disp) ? disp : "RETAIN";
+  const dispKey = ["GROW","RETAIN","IMPROVE","EXIT"].includes(disp) ? disp : "RETAIN";
   const st = DISPOSITION_STYLE[dispKey] ?? { bg: "bg-slate-100", text: "text-slate-600", border: "border-slate-200" };
   const stats = pack.stats ?? {};
   const bench = pack.benchmark ?? {};

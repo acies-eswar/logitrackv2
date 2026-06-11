@@ -119,8 +119,8 @@ export default function SustainabilityPage() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
 
-  // No default product selected
-  const [selectedProduct, setSelectedProduct] = useState<string>("");
+  // Product preselected upfront (spec Module 5) — flows table shows every journey for it.
+  const [selectedProduct, setSelectedProduct] = useState<string>("Refrigerator");
   const [jView, setJView] = useState<"unit" | "annual">("unit");
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -242,6 +242,9 @@ export default function SustainabilityPage() {
 
       {/* V3.0 — Emissions Intelligence: attribution, carbon economics, benchmarking */}
       <EmissionsIntelligence cp={cp} />
+
+      {/* V3.0 — All end-to-end flows for the selected product (segments + attribution + apportioning) */}
+      {selectedProduct && <ProductFlowsTable product={selectedProduct} />}
 
       {/* Summary KPIs — per-unit only when product is selected */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -641,5 +644,104 @@ function SMini({ label, value, accent }: { label: string; value: string; accent?
       <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-tight">{label}</div>
       <div className={`text-base font-bold numeric mt-0.5 ${c}`}>{value}</div>
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   All end-to-end flows for the selected product (spec Module 5):
+   every journey, its segments, cost & emission attribution, load factor & apportioning.
+   ──────────────────────────────────────────────────────────────────────────── */
+function ProductFlowsTable({ product }: { product: string }) {
+  const [data, setData] = useState<any>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => { setData(null); setOpen(null); api.productFlows(product).then(setData).catch(() => setData(null)); }, [product]);
+
+  const flows: any[] = data?.flows ?? [];
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>End-to-End Flows — {product}</CardTitle>
+        <div className="flex items-center gap-2 flex-wrap">
+          {data && <Badge variant="blue">{flows.length} flows</Badge>}
+          {data && <Badge variant="slate">UPC {data.units_per_container} · load factor {data.load_factor}</Badge>}
+        </div>
+      </CardHeader>
+      <CardBody className="p-0">
+        {!data ? <div className="p-5"><Spinner label="Tracing product flows…" /></div> : flows.length === 0 ? (
+          <div className="p-6 text-center text-slate-400 text-sm">No flows found for {product}.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                <th className="px-4 py-2.5">Flow</th>
+                <th className="px-4 py-2.5">Origin → Destination</th>
+                <th className="px-4 py-2.5 text-right">Segments</th>
+                <th className="px-4 py-2.5 text-right">Cost / unit</th>
+                <th className="px-4 py-2.5 text-right">CO₂e / unit</th>
+                <th className="px-4 py-2.5 text-right">Transit</th>
+                <th className="px-4 py-2.5 text-right">UPC</th>
+                <th className="px-4 py-2.5 text-right">Load f.</th>
+              </tr></thead>
+              <tbody>
+                {flows.map((f) => (
+                  <FlowGroup key={f.flow_id} f={f} open={open === f.flow_id} onToggle={() => setOpen(open === f.flow_id ? null : f.flow_id)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function FlowGroup({ f, open, onToggle }: { f: any; open: boolean; onToggle: () => void }) {
+  return (
+    <>
+      <tr className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer" onClick={onToggle}>
+        <td className="px-4 py-2.5 font-medium text-brand dark:text-cyan-400">{open ? "▾ " : "▸ "}{f.flow_id}</td>
+        <td className="px-4 py-2.5 text-ink-900 dark:text-white">{f.origin} → {f.destination}</td>
+        <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{f.segment_count}</td>
+        <td className="px-4 py-2.5 text-right numeric text-ink-900 dark:text-white">{fmtUSD(f.cost_per_unit, false)}</td>
+        <td className="px-4 py-2.5 text-right numeric text-positive">{fmtNum(f.co2e_per_unit_kg, 2)} kg</td>
+        <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{fmtNum(f.total_transit_days, 0)} d</td>
+        <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{f.units_per_container}</td>
+        <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{f.load_factor}</td>
+      </tr>
+      {open && (
+        <tr className="bg-slate-50/60 dark:bg-slate-900/40">
+          <td colSpan={8} className="px-4 py-3">
+            <table className="w-full text-xs">
+              <thead><tr className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                <th className="px-2 py-1.5 text-left">Segment</th><th className="px-2 py-1.5 text-left">Mode</th>
+                <th className="px-2 py-1.5 text-left">Carrier</th><th className="px-2 py-1.5 text-left">Lane</th>
+                <th className="px-2 py-1.5 text-right">Distance</th><th className="px-2 py-1.5 text-right">Weight</th>
+                <th className="px-2 py-1.5 text-right">Load f.</th><th className="px-2 py-1.5 text-right">UPC</th>
+                <th className="px-2 py-1.5 text-right">Cost/ship</th><th className="px-2 py-1.5 text-right">Cost share</th>
+                <th className="px-2 py-1.5 text-right">CO₂e/ship</th><th className="px-2 py-1.5 text-right">Em. share</th>
+              </tr></thead>
+              <tbody>
+                {f.segments.map((s: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="px-2 py-1.5 font-medium text-ink-900 dark:text-white">{s.segment}</td>
+                    <td className="px-2 py-1.5 capitalize text-slate-600 dark:text-slate-300">{s.mode}</td>
+                    <td className="px-2 py-1.5 text-slate-600 dark:text-slate-300">{s.carrier}</td>
+                    <td className="px-2 py-1.5 text-slate-500 dark:text-slate-400">{s.origin} → {s.destination}</td>
+                    <td className="px-2 py-1.5 text-right numeric">{fmtNum(s.distance_km)} km</td>
+                    <td className="px-2 py-1.5 text-right numeric">{fmtNum(s.weight_kg)} kg</td>
+                    <td className="px-2 py-1.5 text-right numeric">{s.load_factor}</td>
+                    <td className="px-2 py-1.5 text-right numeric">{s.units_per_container}</td>
+                    <td className="px-2 py-1.5 text-right numeric text-ink-900 dark:text-white">{fmtUSD(s.cost_per_shipment)}</td>
+                    <td className="px-2 py-1.5 text-right numeric text-brand dark:text-cyan-400">{fmtNum(s.cost_share_pct, 1)}%</td>
+                    <td className="px-2 py-1.5 text-right numeric">{fmtNum(s.co2e_per_shipment_t, 2)} t</td>
+                    <td className="px-2 py-1.5 text-right numeric text-positive">{fmtNum(s.emission_share_pct, 1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

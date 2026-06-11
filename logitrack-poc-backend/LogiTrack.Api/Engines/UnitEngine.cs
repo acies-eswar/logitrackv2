@@ -187,6 +187,86 @@ public static class UnitEngine
     }
 
     // Build a representative multi-TCE product journey
+    /// <summary>
+    /// All representative end-to-end flows for a product family (spec §2 Module 5):
+    /// each flow is a Supplier→Port→Plant→DC path with per-segment cost/emission
+    /// attribution, load factor and container apportioning.
+    /// </summary>
+    public static object ProductFlows(List<Row> lanes, string productFamily, int n = 6)
+    {
+        var fam = ProductFamilies.TryGetValue(productFamily, out var f) ? f : ProductFamilies.Values.First();
+        bool IsP(Row l) => string.Equals(l.GetString("Product_Category"), productFamily, StringComparison.OrdinalIgnoreCase);
+        var pLanes = lanes.Where(IsP).ToList();
+        int upcWt = (int)Math.Floor(26000.0 / Math.Max(1, fam.PkgKg));
+        int upc = Math.Min(fam.UnitsPerContainer, upcWt);
+
+        // Final legs: distinct destination DCs for this product, top N by annual freight.
+        var finalLegs = pLanes.Where(l => l.GetString("Segment") == "Plant→DC")
+            .OrderByDescending(LaneAnnualFreight)
+            .GroupBy(l => l.GetString("Destination")).Select(g => g.First())
+            .Take(n).ToList();
+
+        Row? Best(string seg, Func<Row, bool> match) =>
+            pLanes.Where(l => l.GetString("Segment") == seg && match(l)).OrderByDescending(LaneAnnualFreight).FirstOrDefault()
+            ?? pLanes.Where(l => l.GetString("Segment") == seg).OrderByDescending(LaneAnnualFreight).FirstOrDefault();
+
+        var flows = new List<object>();
+        int fid = 1;
+        foreach (var fin in finalLegs)
+        {
+            string plant = fin.GetString("Origin");
+            var mid = Best("Port→Plant", l => l.GetString("Destination") == plant);
+            var inl = mid is null ? null : Best("Supplier→Port", l => l.GetString("Destination") == mid.GetString("Origin"));
+            var segLanes = new[] { inl, mid, fin }.Where(l => l != null).Cast<Row>().ToList();
+
+            double totCost = segLanes.Sum(LaneFreightPerShipment);
+            double totCo2 = segLanes.Sum(LaneCo2ePerShipment);
+            double totTransit = segLanes.Sum(l => l.GetDouble("Transit_Time_Days"));
+
+            var segs = segLanes.Select(l =>
+            {
+                double cost = LaneFreightPerShipment(l), co2 = LaneCo2ePerShipment(l);
+                return (object)new Dictionary<string, object?>
+                {
+                    ["segment"] = l.GetString("Segment"), ["mode"] = l.GetString("Mode"),
+                    ["carrier"] = l.GetString("Carrier"),
+                    ["origin"] = l.GetString("Origin"), ["destination"] = l.GetString("Destination"),
+                    ["distance_km"] = R2(LaneDistance(l)), ["transit_days"] = R2(l.GetDouble("Transit_Time_Days")),
+                    ["weight_kg"] = R2(LaneWeightKg(l)),
+                    ["load_factor"] = R2(fam.LoadFactor), ["units_per_container"] = upc,
+                    ["cost_per_shipment"] = R2(cost), ["co2e_per_shipment_t"] = R3(co2),
+                    ["cost_per_unit"] = R2(SafeDiv(cost, upc)), ["co2e_per_unit_kg"] = R3(SafeDiv(co2 * 1000.0, upc)),
+                    ["cost_share_pct"] = R2(SafeDiv(cost, totCost) * 100),
+                    ["emission_share_pct"] = R2(SafeDiv(co2, totCo2) * 100),
+                };
+            }).ToList();
+
+            flows.Add(new Dictionary<string, object?>
+            {
+                ["flow_id"] = $"FLOW-{fid:00}",
+                ["origin"] = segLanes.Count > 0 ? segLanes[0].GetString("Origin") : "",
+                ["plant"] = plant,
+                ["destination"] = fin.GetString("Destination"),
+                ["segment_count"] = segLanes.Count,
+                ["total_cost_per_shipment"] = R2(totCost),
+                ["total_co2e_per_shipment_t"] = R3(totCo2),
+                ["total_transit_days"] = R2(totTransit),
+                ["units_per_container"] = upc, ["load_factor"] = R2(fam.LoadFactor),
+                ["cost_per_unit"] = R2(SafeDiv(totCost, upc)),
+                ["co2e_per_unit_kg"] = R3(SafeDiv(totCo2 * 1000.0, upc)),
+                ["segments"] = segs,
+            });
+            fid++;
+        }
+        return new Dictionary<string, object?>
+        {
+            ["product"] = productFamily,
+            ["units_per_container"] = upc, ["load_factor"] = R2(fam.LoadFactor),
+            ["packaged_weight_kg"] = R2(fam.PkgKg),
+            ["flows"] = flows,
+        };
+    }
+
     public static object ProductJourney(List<Row> lanes, string productFamily, string destinationDc)
     {
         var fam = ProductFamilies.TryGetValue(productFamily, out var f)

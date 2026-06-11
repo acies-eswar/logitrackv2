@@ -52,6 +52,10 @@ public sealed class CoreController : ControllerBase
     [HttpGet("transportation/ports")]
     public object Ports() => TransportationEngine.PortCongestion(_store.LanesInScope());
 
+    [HttpGet("sustainability/product-flows")]
+    public object ProductFlows([FromQuery(Name = "product")] string product = "Refrigerator")
+        => UnitEngine.ProductFlows(_store.LanesInScope(), product);
+
     [HttpGet("transportation/carrier-pack")]
     public IActionResult CarrierPack([FromQuery(Name = "carrier")] string carrier = "")
     {

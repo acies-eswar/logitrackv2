@@ -60,7 +60,8 @@ export default function ScenariosPage() {
   const [minEm, setMinEm] = useState(0);           // min emission reduction (%)
   const [hideInfeasible, setHideInfeasible] = useState(false);
 
-  const [sortKey, setSortKey] = useState<SortKey>("decision_score");
+  // Emissions-first by default (spec §13/§94) — emissions reduction leads the ranking.
+  const [sortKey, setSortKey] = useState<SortKey>("emissions_reduction_pct");
   const [catFilter, setCatFilter] = useState("All");
 
   const load = useCallback(() => {
