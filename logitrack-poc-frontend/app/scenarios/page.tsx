@@ -661,7 +661,7 @@ function AlternativesEvaluated({ recs, selected, onSelect }: { recs: any[]; sele
   const rejected = recs.filter((r) => r.category === "Rejected").slice(0, 5);
   return (
     <Card>
-      <CardHeader><CardTitle>Alternatives Evaluated — Transparency</CardTitle><div className="text-[11px] text-slate-400">What was considered, what won, and why the rest were rejected</div></CardHeader>
+      <CardHeader><CardTitle>Alternatives Evaluated — Transparency</CardTitle><div className="text-[11px] text-slate-400">click any scenario to compare the options within its decision family</div></CardHeader>
       <CardBody className="grid lg:grid-cols-2 gap-6">
         <div>
           <div className="text-xs font-semibold text-positive uppercase tracking-wide mb-2">Top considered</div>
@@ -683,13 +683,14 @@ function AlternativesEvaluated({ recs, selected, onSelect }: { recs: any[]; sele
           <div className="space-y-2">
             {rejected.length === 0 && <div className="text-xs text-slate-400">No alternatives were outright rejected at this carbon price.</div>}
             {rejected.map((r) => (
-              <div key={r.scenario_id} className="flex items-center justify-between gap-2 rounded-lg border border-danger/20 bg-danger/5 dark:bg-danger/10 px-3 py-2">
+              <button key={r.scenario_id} onClick={() => onSelect(r.scenario_id)}
+                className={`w-full text-left flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors ${selected === r.scenario_id ? "border-danger/50 bg-danger/10" : "border-danger/20 bg-danger/5 dark:bg-danger/10 hover:bg-danger/10"}`}>
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-ink-900 dark:text-white truncate">{r.name}</div>
-                  <div className="text-[11px] text-danger">{r.rejected_reason}</div>
+                  <div className="text-[11px] text-danger">{r.rejected_reason} · compare options →</div>
                 </div>
                 <span className="font-bold numeric text-danger">{Math.round(r.decision_score)}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
