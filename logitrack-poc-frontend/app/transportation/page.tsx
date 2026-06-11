@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, fmtUSD, fmtCO2, fmtNum, fmtPct } from "@/lib/api";
-import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Segmented } from "@/components/ui";
+import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Segmented, Select } from "@/components/ui";
 import { HBarList } from "@/components/charts";
 
 const DISPOSITION_STYLE: Record<string, { bg: string; text: string; border: string }> = {
@@ -20,6 +20,8 @@ export default function TransportationPage() {
   const [transit,  setTransit]  = useState<any[]>([]);
   const [modeF,    setModeF]    = useState("all");
   const [search,   setSearch]   = useState("");
+  const [product,  setProduct]  = useState("all");
+  const [flows,    setFlows]    = useState<any>(null);
   const [error,    setError]    = useState(false);
 
   const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
@@ -41,6 +43,28 @@ export default function TransportationPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Per-product end-to-end journey (sum of segments) for the selected product.
+  useEffect(() => {
+    if (product === "all") { setFlows(null); return; }
+    api.productFlows(product).then(setFlows).catch(() => setFlows(null));
+  }, [product]);
+
+  const TPRODUCTS = ["Refrigerator", "Washing Machine", "Air Conditioner", "Microwave Oven", "Dishwasher"];
+
+  // Per-product performance computed from the product's lanes (end-to-end network, not one segment).
+  const prod = useMemo(() => {
+    const ls = product === "all" ? lanes : lanes.filter((l) => l.product_category === product);
+    const ship = ls.reduce((a, l) => a + (l.shipments ?? 0), 0) || 1;
+    const freight = ls.reduce((a, l) => a + (l.annual_freight_usd ?? 0), 0);
+    const co2 = ls.reduce((a, l) => a + (l.annual_co2e ?? 0), 0);
+    const otif = ls.reduce((a, l) => a + (l.otif_pct ?? 0) * (l.shipments ?? 0), 0) / ship;
+    const transit = ls.reduce((a, l) => a + (l.transit_days ?? 0) * (l.shipments ?? 0), 0) / ship;
+    const fl: any[] = flows?.flows ?? [];
+    const e2eCost = fl.length ? fl.reduce((a, f) => a + (f.total_cost_per_shipment ?? 0), 0) / fl.length : null;
+    const e2eCo2 = fl.length ? fl.reduce((a, f) => a + (f.total_co2e_per_shipment_t ?? 0), 0) / fl.length : null;
+    return { count: ls.length, freight, co2, otif, transit, costPerLaneShip: freight / ship, emPerLaneShip: co2 / ship, e2eCost, e2eCo2 };
+  }, [lanes, product, flows]);
+
   const selectCarrier = useCallback((name: string) => {
     if (selectedCarrier === name) { setSelectedCarrier(null); setPack(null); return; }
     setSelectedCarrier(name);
@@ -54,11 +78,12 @@ export default function TransportationPage() {
   const filtered = useMemo(() =>
     lanes.filter((l) =>
       (modeF === "all" || l.mode === modeF) &&
+      (product === "all" || l.product_category === product) &&
       (search === "" ||
         l.lane.toLowerCase().includes(search.toLowerCase()) ||
         l.carrier.toLowerCase().includes(search.toLowerCase()))
     ),
-    [lanes, modeF, search],
+    [lanes, modeF, search, product],
   );
 
   // Must be before early returns — hooks order must be stable
@@ -89,17 +114,26 @@ export default function TransportationPage() {
         eyebrow="Transportation Performance"
         title="Transportation Performance"
         desc="Carrier scorecards, lane performance, freight spend, transit time, and OTIF service monitoring across the network."
+        actions={
+          <Select value={product} onChange={(e) => setProduct(e.target.value)} aria-label="Product">
+            <option value="all">All products</option>
+            {TPRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        }
       />
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
+        <KPI label="Total Freight Cost" value={fmtUSD(prod.freight)} accent="blue" desc={product === "all" ? "all products" : product} />
+        <KPI label="Weighted OTIF" value={fmtPct(prod.otif)} sub={`target ${sum.otif_target_pct}%`} accent={prod.otif >= sum.otif_target_pct ? "green" : "amber"} />
+        <KPI label="Avg Cost / Lane Shipment" value={fmtUSD(prod.costPerLaneShip)} desc="per-segment leg" />
+        <KPI label="Avg Emissions / Lane Shipment" value={fmtCO2(prod.emPerLaneShip)} desc="per-segment leg" accent="green" />
+      </div>
+      {/* End-to-end per-shipment metrics (full journey, not one segment) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPI label="Total Freight Cost"   value={fmtUSD(sum.total_freight_usd)} accent="blue" />
-        <KPI label="Weighted OTIF"        value={fmtPct(sum.weighted_avg_otif_pct)}
-          sub={`target ${sum.otif_target_pct}%`}
-          accent={sum.weighted_avg_otif_pct >= sum.otif_target_pct ? "green" : "amber"} />
-        <KPI label="SLA Breaches"         value={fmtNum(sum.sla_breaches)}
-          sub={`of ${sum.lane_count} lanes`}
-          accent={sum.sla_breaches > 0 ? "red" : "green"} />
-        <KPI label="Avg Cost / Shipment"  value={fmtUSD(sum.avg_cost_per_shipment)} />
+        <KPI label="End-to-End Cost / Shipment" value={prod.e2eCost != null ? fmtUSD(prod.e2eCost) : "— select product"} accent="blue" desc="sum of journey legs" />
+        <KPI label="End-to-End Emissions / Shipment" value={prod.e2eCo2 != null ? `${fmtNum(prod.e2eCo2, 2)} t` : "— select product"} accent="green" desc="sum of journey legs" />
+        <KPI label="SLA Breaches" value={fmtNum(sum.sla_breaches)} sub={`of ${sum.lane_count} lanes`} accent={sum.sla_breaches > 0 ? "red" : "green"} />
+        <KPI label="Avg Transit (lane)" value={`${fmtNum(prod.transit, 1)} d`} desc={`${prod.count} lanes`} />
       </div>
 
       {/* Carrier Dispositions */}
