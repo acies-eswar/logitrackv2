@@ -7,6 +7,7 @@ import {
   Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Button, Segmented,
 } from "@/components/ui";
 import { BarChartCard, WaterfallBar } from "@/components/charts";
+import { useApprovals, setApproval, isApproved } from "@/lib/approvals";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Module 4 — Executive Decision Hub (LogiTrack V3.0)
@@ -36,16 +37,11 @@ export default function DecisionHub() {
   const [carbon, setCarbon] = useState(75);
   const [hub, setHub] = useState<any>(null);
   const [error, setError] = useState(false);
-  const [queue, setQueue] = useState<Record<string, string>>({});
+  const queue = useApprovals();   // shared with Scenario Planning & Transition Economics
 
   const load = useCallback(() => {
     setError(false); setHub(null);
-    api.decisionHub(carbon).then((h) => {
-      setHub(h);
-      const q: Record<string, string> = {};
-      h.scenarios.forEach((s: any) => { q[s.scenario_id] = s.verdict; });
-      setQueue(q);
-    }).catch(() => setError(true));
+    api.decisionHub(carbon).then(setHub).catch(() => setError(true));
   }, [carbon]);
 
   useEffect(() => { load(); }, [load]);
@@ -88,7 +84,7 @@ export default function DecisionHub() {
         <KPI label="Portfolio ROI" value={fmtPct(metrics.roi, 0)} accent="blue" desc="benefit ÷ invest" />
         <KPI label="Portfolio NPV" value={fmtUSD(metrics.npv)} accent="blue" desc="Σ P50 NPV" />
         <KPI label="Carbon Cost Avoided" value={fmtUSD(metrics.carbonAvoided)} accent="green" desc={`@ $${carbon}/t`} />
-        <KPI label="Scenarios Approved" value={`${approved.length} / ${scen.length}`} desc="approve + pilot" />
+        <KPI label="Scenarios Approved" value={`${Object.values(queue).filter(isApproved).length} / ${scen.length}`} desc="approved by you" />
         <KPI label="Strategic Readiness" value={fmtNum(metrics.readiness)} accent="blue" desc="avg decision score" />
       </div>
 
@@ -114,7 +110,7 @@ export default function DecisionHub() {
       <PortfolioRanking scen={scen} />
 
       {/* Decision queue */}
-      <DecisionQueue scen={scen} queue={queue} setQueue={setQueue} />
+      <DecisionQueue scen={scen} queue={queue} />
 
       {/* Narrative */}
       <ExecutiveNarrative scen={scen} approved={approved} metrics={metrics} rec={rec} />
@@ -370,15 +366,13 @@ function PortfolioRanking({ scen }: { scen: any[] }) {
   );
 }
 
-/* ── Executive Decision Queue (spec §183–184) ───────────────────────────────── */
-function DecisionQueue({ scen, queue, setQueue }: any) {
+/* ── Executive Decision Queue (spec §183–184) — shared approvals ────────────── */
+function DecisionQueue({ scen, queue }: any) {
   const pending = scen.filter((s: any) => s.decision_score >= 50).slice(0, 10);
-  function cycle(id: string) {
-    setQueue((q: Record<string, string>) => ({ ...q, [id]: QUEUE_NEXT[q[id]] ?? "APPROVE" }));
-  }
+  function cycle(id: string) { setApproval(id, QUEUE_NEXT[queue[id]] ?? "APPROVE"); }
   return (
     <Card className="mb-6">
-      <CardHeader><CardTitle>Executive Decision Queue</CardTitle><div className="text-[11px] text-slate-400">click a status to set Approve / Pilot / Reject</div></CardHeader>
+      <CardHeader><CardTitle>Executive Decision Queue</CardTitle><div className="text-[11px] text-slate-400">click a status to set Approve / Pilot / Reject — shared with Scenario Planning</div></CardHeader>
       <CardBody className="space-y-2">
         {pending.map((s: any) => (
           <div key={s.scenario_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">

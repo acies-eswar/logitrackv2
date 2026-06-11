@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import Link from "next/link";
+import { useApprovals, isApproved } from "@/lib/approvals";
 import { useSearchParams } from "next/navigation";
 import { api, fmtUSD, fmtNum, fmtPct, fmtCO2, VERDICT } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Select } from "@/components/ui";
@@ -14,6 +16,13 @@ function TransitionInner() {
   const [loading, setLoading] = useState(false);
   const [listErr, setListErr] = useState(false);
   const [evalErr, setEvalErr] = useState(false);
+  const approvals = useApprovals();
+
+  // Only scenarios approved/piloted in Scenario Planning are eligible here (spec).
+  const approved = useMemo(
+    () => list.filter((s) => isApproved(approvals[s.scenario_id])),
+    [list, approvals],
+  );
 
   const runEval = useCallback((id: string) => {
     if (!id) return;
@@ -27,19 +36,35 @@ function TransitionInner() {
 
   useEffect(() => {
     setListErr(false);
-    api.scenarios()
-      .then((l) => {
-        setList(l);
-        const initial = params.get("s") || (l[0]?.scenario_id ?? "");
-        setSid(initial);
-        if (initial) runEval(initial);
-      })
-      .catch(() => setListErr(true));
-  }, [params, runEval]);
+    api.scenarios().then(setList).catch(() => setListErr(true));
+  }, []);
+
+  // Pick an approved scenario to show (prefer the ?s= deep-link if it is approved).
+  useEffect(() => {
+    if (approved.length === 0) { setSid(""); setR(null); return; }
+    const wanted = params.get("s");
+    const valid = wanted && approved.find((s) => s.scenario_id === wanted) ? wanted : null;
+    const next = valid ?? (approved.find((s) => s.scenario_id === sid) ? sid : approved[0].scenario_id);
+    if (next !== sid || !r) { setSid(next); runEval(next); }
+  }, [approved, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onChange(id: string) { setSid(id); runEval(id); }
 
   if (listErr) return <ApiError retry={() => window.location.reload()} />;
+
+  if (list.length > 0 && approved.length === 0) {
+    return (
+      <>
+        <PageHeader eyebrow="Transition Economics" title="Transition Economics"
+          desc="Quantify the financial effort to achieve future-state benefits." />
+        <Card><CardBody className="text-center py-16">
+          <div className="text-lg font-semibold text-ink-900 dark:text-white mb-2">No approved scenarios yet</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400 mb-5">Approve or pilot a recommendation in Scenario Planning to build its financial case here.</div>
+          <Link href="/scenarios"><span className="px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium">Go to Scenario Planning →</span></Link>
+        </CardBody></Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -49,8 +74,10 @@ function TransitionInner() {
         desc="Quantify the financial effort to achieve future-state benefits: true cost of switching, working capital, tariff exposure, risk, and value realization."
         actions={
           <Select value={sid} onChange={(e) => onChange(e.target.value)} className="min-w-[260px]">
-            {list.map((s) => (
-              <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
+            {approved.map((s) => (
+              <option key={s.scenario_id} value={s.scenario_id}>
+                {isApproved(approvals[s.scenario_id]) ? (approvals[s.scenario_id] === "APPROVE" ? "✓ " : "◇ ") : ""}{s.name}
+              </option>
             ))}
           </Select>
         }

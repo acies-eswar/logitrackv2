@@ -8,6 +8,7 @@ import {
   Badge, Button, Segmented, Select, KPI,
 } from "@/components/ui";
 import { BarChartCard } from "@/components/charts";
+import { useApprovals, setApproval } from "@/lib/approvals";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Module 3 — Scenario Planning & Recommendation Workbench (LogiTrack V3.0)
@@ -96,9 +97,9 @@ export default function ScenariosPage() {
   // Emissions-first by default (spec §13/§94) — emissions reduction leads the ranking.
   const [sortKey, setSortKey] = useState<SortKey>("emissions_reduction_pct");
   const [catFilter, setCatFilter] = useState("All");
-  // manual approval workflow (spec §38/§161): the user approves/pilots/rejects each recommendation
-  const [approvals, setApprovals] = useState<Record<string, string>>({});
-  const setApprove = (id: string, v: string) => setApprovals((a) => ({ ...a, [id]: a[id] === v ? "" : v }));
+  // manual approval workflow — shared across the app (Transition Economics & Executive Hub)
+  const approvals = useApprovals();
+  const setApprove = (id: string, v: string) => setApproval(id, v);
 
   const load = useCallback(() => {
     setErr(false); setData(null);
