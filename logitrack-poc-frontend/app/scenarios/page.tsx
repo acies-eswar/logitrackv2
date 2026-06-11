@@ -32,6 +32,12 @@ const VERDICT_VARIANT: Record<string, "green" | "blue" | "amber" | "red"> = {
 const VERDICT_LABEL: Record<string, string> = {
   APPROVE: "Approve", PILOT: "Pilot", CONDITIONAL: "Conditional", DECLINE: "Reject",
 };
+// decision-family labels (spec §26 categories) used to group "alternatives considered"
+const TYPE_LABEL: Record<string, string> = {
+  route: "Route optimization", carrier: "Carrier optimization", modal_shift: "Modal optimization",
+  supplier: "Supplier optimization", plant_allocation: "Manufacturing relocation",
+  dc_allocation: "Distribution optimization", hybrid: "Hybrid optimization",
+};
 
 function scoreColor(s: number) {
   return s >= 80 ? "text-positive" : s >= 65 ? "text-brand dark:text-cyan-400" : s >= 50 ? "text-warning" : "text-danger";
@@ -156,6 +162,8 @@ export default function ScenariosPage() {
               <WhyWon rec={selRec} recommended={recommended} />
             </div>
           )}
+
+          {selRec && <AlternativesConsidered recs={recs} selRec={selRec} onSelect={setSelected} />}
 
           <JourneyComparison journey={journey} rec={selRec} product={product} />
 
@@ -508,6 +516,68 @@ function BaselineVsFuture({ detail }: { detail: any }) {
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+/* ── Alternatives Considered for THIS recommendation (same decision family) ──
+   e.g. when "Ocean → Rail Modal Shift" is selected, every other modal-shift option
+   (Ocean → Air, Road → Rail, Air → Ocean …) is shown, best floated to the top. ── */
+function AlternativesConsidered({ recs, selRec, onSelect }: { recs: any[]; selRec: any; onSelect: (id: string) => void }) {
+  const family = useMemo(
+    () => recs.filter((r) => r.type === selRec.type).sort((a, b) => b.decision_score - a.decision_score),
+    [recs, selRec.type],
+  );
+  if (family.length <= 1) return null;
+  const best = family[0];
+  const label = TYPE_LABEL[selRec.type] ?? "Optimization";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Alternatives Considered — {label}</CardTitle>
+        <div className="text-[11px] text-slate-400">{family.length} options in this decision family · best floated to top</div>
+      </CardHeader>
+      <CardBody className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+              <th className="px-3 py-2.5 text-left">Option</th>
+              <th className="px-3 py-2.5 text-right">Emissions</th>
+              <th className="px-3 py-2.5 text-right">Cost Δ</th>
+              <th className="px-3 py-2.5 text-right">Lead Δ</th>
+              <th className="px-3 py-2.5 text-right">Score</th>
+              <th className="px-3 py-2.5 text-left">Status</th>
+            </tr></thead>
+            <tbody>
+              {family.map((r, i) => {
+                const isBest = i === 0;
+                const isSel = r.scenario_id === selRec.scenario_id;
+                return (
+                  <tr key={r.scenario_id} onClick={() => onSelect(r.scenario_id)}
+                    className={`border-b border-slate-50 dark:border-slate-900 cursor-pointer transition-colors ${isSel ? "bg-brand-50 dark:bg-cyan-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-900/60"}`}>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {isBest && <span className="text-positive" title="Best in family">★</span>}
+                        <span className="font-medium text-ink-900 dark:text-white">{r.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right numeric text-positive">−{fmtNum(r.emissions_reduction_pct, 1)}%</td>
+                    <td className={`px-3 py-2.5 text-right numeric ${r.cost_impact_pct <= 0 ? "text-positive" : "text-danger"}`}>{r.cost_impact_pct > 0 ? "+" : ""}{fmtNum(r.cost_impact_pct, 1)}%</td>
+                    <td className="px-3 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{r.transit_impact_days > 0 ? "+" : ""}{fmtNum(r.transit_impact_days, 1)}d</td>
+                    <td className={`px-3 py-2.5 text-right font-bold numeric ${scoreColor(r.decision_score)}`}>{Math.round(r.decision_score)}</td>
+                    <td className="px-3 py-2.5">
+                      {isBest
+                        ? <Badge variant="green">Recommended</Badge>
+                        : <span className="text-[11px] text-slate-500 dark:text-slate-400">Considered · {best.decision_score - r.decision_score > 0 ? `−${Math.round(best.decision_score - r.decision_score)} vs best` : r.rejected_reason}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
