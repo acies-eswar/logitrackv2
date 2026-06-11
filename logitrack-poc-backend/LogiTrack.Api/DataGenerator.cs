@@ -412,11 +412,11 @@ public static class DataGenerator
         new Loc("Savannah Port", "US", 32.10, -81.10),
     };
 
+    // Analysis unit is the finished-goods Product Family (spec §18/§43), not the
+    // component category. Lanes are labelled by the appliance family they ultimately serve.
     private static readonly string[] Categories = new[]
     {
-        "Electronics Modules", "Steel Components", "Compressor Units", "Plastic Components",
-        "Semiconductor Assemblies", "Aluminum Forgings", "Battery Cells", "Wiring Harnesses",
-        "Hydraulic Systems", "Precision Machined Parts", "Rubber Seals",
+        "Refrigerator", "Washing Machine", "Air Conditioner", "Microwave Oven", "Dishwasher",
     };
 
     private static readonly string[] OceanCarriers = { "ONE", "MSC", "Hapag-Lloyd", "Evergreen", "COSCO", "CMA CGM", "Maersk" };
@@ -456,7 +456,7 @@ public static class DataGenerator
         int sIdx = 1;
         foreach (var s in Suppliers)
         {
-            string cat = s.Category ?? Pick(rng, Categories);
+            string cat = Pick(rng, Categories);
             supplierRows.Add(MakeRow(
                 "Supplier_ID", $"SUP-{sIdx:D3}",
                 "Supplier_Name", s.Name,
@@ -537,7 +537,7 @@ public static class DataGenerator
                 int transit = TransitDays(rng, mode, dist);
                 double otif = OtifPct(rng, mode);
                 string carrier = CarrierFor(rng, mode);
-                string cat = sup.Category ?? Pick(rng, Categories);
+                string cat = Pick(rng, Categories);
 
                 laneRows.Add(LaneRow(laneId++, sup, port, "Supplier→Port", mode,
                     dist, weight, ships, freight, transit, otif, carrier, cat));
@@ -597,7 +597,7 @@ public static class DataGenerator
                 int transit = TransitDays(rng, mode, dist);
                 double otif = OtifPct(rng, mode);
                 string carrier = CarrierFor(rng, mode);
-                string cat = sup.Category ?? Pick(rng, Categories);
+                string cat = Pick(rng, Categories);
 
                 laneRows.Add(LaneRow(laneId++, sup, plant, "Supplier→Plant", mode,
                     dist, weight, ships, freight, transit, otif, carrier, cat));

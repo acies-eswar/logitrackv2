@@ -41,7 +41,7 @@ public static class TransportationEngine
             double cps = SafeDiv(a.freight, a.ship);
             double altRate = avgCostPerShip * 0.93;
             double savings = (cps - altRate) * a.ship;
-            string disp = Disposition(otif, intensity, netIntensity, cps, avgCostPerShip, savings, 250_000.0);
+            double score = CarrierScore(otif, intensity, cps, netIntensity, avgCostPerShip);
             outRows.Add(new Dictionary<string, object?>
             {
                 ["carrier"] = name, ["lanes"] = a.lanes, ["shipments"] = a.ship,
@@ -52,13 +52,48 @@ public static class TransportationEngine
                 ["cost_per_unit"] = R2(costPerUnit),
                 ["emission_intensity_g_per_tkm"] = R2(intensity),
                 ["intensity_vs_benchmark"] = R2(SafeDiv(intensity, netIntensity) - 1.0),
-                ["carrier_score"] = R2(CarrierScore(otif, intensity, cps, netIntensity, avgCostPerShip)),
+                ["carrier_score"] = R2(score),
                 ["modes"] = a.modes.Cast<object>().ToList(),
                 ["sla_breach"] = otif < Config.OtifTargetPct,
-                ["disposition"] = disp,
+                ["_savings"] = savings,
             });
         }
+
+        // Second pass: assign Grow/Retain/Improve/Exit by score percentile so every
+        // band is populated (spec §109). Exit only when switching pays for itself.
+        AssignDispositions(outRows);
+        foreach (var o in outRows) ((Dictionary<string, object?>)o).Remove("_savings");
         return outRows.OrderByDescending(x => (double)((Dictionary<string, object?>)x)["annual_freight_usd"]!).ToList();
+    }
+
+    private static void AssignDispositions(List<object> rows)
+    {
+        var scores = rows.Select(o => (double)((Dictionary<string, object?>)o)["carrier_score"]!).OrderBy(s => s).ToList();
+        double p70 = Pctile(scores, 0.70), p40 = Pctile(scores, 0.40), p15 = Pctile(scores, 0.15);
+        foreach (var o in rows)
+        {
+            var d = (Dictionary<string, object?>)o;
+            double sc = (double)d["carrier_score"]!;
+            double sv = d.TryGetValue("_savings", out var s) && s is double sd ? sd : 0.0;
+            d["disposition"] = DispositionByBand(sc, p70, p40, p15, sv, 250_000.0);
+        }
+    }
+
+    private static double Pctile(List<double> sorted, double q)
+    {
+        if (sorted.Count == 0) return 0;
+        double pos = q * (sorted.Count - 1);
+        int lo = (int)Math.Floor(pos), hi = (int)Math.Ceiling(pos);
+        return lo == hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+    }
+
+    private static string DispositionByBand(double score, double p70, double p40, double p15,
+        double annualSavings, double exitPenalty)
+    {
+        if (score >= p70) return "GROW";
+        if (score >= p40) return "RETAIN";
+        if (score >= p15) return "IMPROVE";
+        return annualSavings > exitPenalty * 0.2 ? "EXIT" : "IMPROVE";
     }
 
     // Carrier Score: w1=0.40 cost, w2=0.35 service, w3=0.25 emissions (0–100, higher=better)
@@ -69,24 +104,6 @@ public static class TransportationEngine
         double svcNorm   = Math.Min(1.0, otif / 100.0);
         double emitNorm  = Math.Max(0, 1.0 - (intensity / Math.Max(1, netIntensity) - 0.5));
         return R2(Math.Min(100, (costNorm * 0.40 + svcNorm * 0.35 + emitNorm * 0.25) * 100));
-    }
-
-    private static string Disposition(double otif, double intensity, double netIntensity,
-        double costPerShip, double avgCostPerShip, double annualSavings, double exitPenalty)
-    {
-        bool costLow  = costPerShip <= avgCostPerShip * 1.05;
-        bool svcOk    = otif >= Config.OtifTargetPct;
-        bool emitOk   = intensity <= netIntensity * 1.10;
-
-        if (costLow && svcOk && emitOk)   return "GROW";
-        if (costLow && svcOk)              return "RETAIN";
-        if (!svcOk || !emitOk)
-        {
-            // EXIT only if savings exceed exit cost
-            if (annualSavings > exitPenalty * 0.2) return "EXIT";
-            return "FIX";
-        }
-        return "RETAIN";
     }
 
     public static object CarrierPack(List<Row> lanes, string carrierName)
@@ -121,10 +138,11 @@ public static class TransportationEngine
         double netAnnualEffect = annualSavingsIfExit - exitPenalty * 0.20;
         double paybackMonths = annualSavingsIfExit > 0 ? 12.0 * exitPenalty / annualSavingsIfExit : 99;
 
-        string disp = Disposition(otifW, intensity, netIntensity, cCostPerShip, netCostPerShip,
-            annualSavingsIfExit, exitPenalty);
-
         double score = CarrierScore(otifW, intensity, cCostPerShip, netIntensity, netCostPerShip);
+        // disposition consistent with the population-percentile bands used in the scorecards
+        string disp = CarrierScorecards(lanes)
+            .Select(s => (Dictionary<string, object?>)s)
+            .FirstOrDefault(s => (string)s["carrier"]! == carrierName)?["disposition"] as string ?? "RETAIN";
 
         // component scores (0-100 each)
         double costComp  = Math.Min(100, Math.Max(0, (1.0 - (cCostPerShip / Math.Max(1, netCostPerShip) - 0.5)) * 100));
@@ -135,7 +153,7 @@ public static class TransportationEngine
         {
             "GROW"   => $"{carrierName} is a high-performing partner: cost {fmtK(cCostPerShip)}/ship vs benchmark {fmtK(netCostPerShip)}/ship, OTIF {otifW:0.1}%, intensity {intensity:0} g/tkm. Recommended to consolidate volume.",
             "RETAIN" => $"{carrierName} meets service and cost targets. OTIF {otifW:0.1}% vs 95% target; intensity {intensity:0} g/tkm vs network {netIntensity:0} g/tkm. Maintain current volume.",
-            "FIX"    => $"{carrierName} underperforms on {'s' + (otifW < 95 ? "ervice (OTIF " + otifW.ToString("0.1") + "%)" : "ustainability (intensity " + intensity.ToString("0") + " g/tkm)")}. Issue corrective SLA within 90 days or escalate.",
+            "IMPROVE"    => $"{carrierName} underperforms on {'s' + (otifW < 95 ? "ervice (OTIF " + otifW.ToString("0.1") + "%)" : "ustainability (intensity " + intensity.ToString("0") + " g/tkm)")}. Issue corrective SLA within 90 days or escalate.",
             "EXIT"   => $"Exiting {carrierName} saves an estimated {fmtK(annualSavingsIfExit)}/yr after exit costs of {fmtK(exitPenalty)}. Reallocate {ship:N0} shipments to higher-scoring carriers.",
             _ => "",
         };
@@ -186,9 +204,8 @@ public static class TransportationEngine
     // Aggregate dispositions for the decision hub roll-up
     public static object AllCarrierDispositions(List<Row> lanes)
     {
-        var scorecards = CarrierScorecards(lanes);
+        var scorecards = CarrierScorecards(lanes);   // dispositions already assigned by band
         double netCostPerShip = SafeDiv(lanes.Sum(LaneAnnualFreight), lanes.Sum(LaneShipments));
-        double netIntensity   = SafeDiv(lanes.Sum(LaneAnnualCo2e) * 1_000_000, lanes.Sum(LaneAnnualTonneKm));
 
         var disp = new Dictionary<string, List<string>>();
         double spendAtRisk = 0, savingsOpportunity = 0;
@@ -197,30 +214,16 @@ public static class TransportationEngine
         {
             var d = (Dictionary<string, object?>)sc;
             string name = (string)d["carrier"]!;
-            double otif = d["avg_otif_pct"] is double od ? od : Convert.ToDouble(d["avg_otif_pct"] ?? 0.0);
-            double intens = d["emission_intensity_g_per_tkm"] is double id ? id : Convert.ToDouble(d["emission_intensity_g_per_tkm"] ?? 0.0);
             double cps = d["cost_per_shipment"] is double cd ? cd : Convert.ToDouble(d["cost_per_shipment"] ?? 0.0);
-
-            // shipments may be stored as int or double depending on source; handle both safely
-            object shipObj = d["shipments"]!;
-            int ships;
-            if (shipObj is int si) ships = si;
-            else if (shipObj is long sl) ships = (int)sl;
-            else if (shipObj is double sd) ships = (int)Math.Round(sd);
-            else if (int.TryParse(shipObj?.ToString() ?? "0", out var parsed)) ships = parsed;
-            else ships = 0;
-
+            int ships = d["shipments"] is int si ? si : (int)Math.Round(Convert.ToDouble(d["shipments"] ?? 0));
             double freight = d["annual_freight_usd"] is double fd ? fd : Convert.ToDouble(d["annual_freight_usd"] ?? 0.0);
+            double savings = (cps - netCostPerShip * 0.93) * ships;
 
-            double altRate  = netCostPerShip * 0.93;
-            double savings  = (cps - altRate) * ships;
-            double exitPen  = 250_000.0;
-
-            string disposition = Disposition(otif, intens, netIntensity, cps, netCostPerShip, savings, exitPen);
+            string disposition = (string)(d["disposition"] ?? "RETAIN");
             if (!disp.ContainsKey(disposition)) disp[disposition] = new List<string>();
             disp[disposition].Add(name);
 
-            if (disposition is "EXIT" or "FIX") spendAtRisk += freight;
+            if (disposition is "EXIT" or "IMPROVE") spendAtRisk += freight;
             if (disposition == "EXIT") savingsOpportunity += Math.Max(0, savings);
         }
 
@@ -235,7 +238,7 @@ public static class TransportationEngine
             {
                 ["GROW"]   = (disp.TryGetValue("GROW",   out var g) ? g.Count : 0),
                 ["RETAIN"] = (disp.TryGetValue("RETAIN", out var r) ? r.Count : 0),
-                ["FIX"]    = (disp.TryGetValue("FIX",    out var fx) ? fx.Count : 0),
+                ["IMPROVE"]    = (disp.TryGetValue("IMPROVE",    out var fx) ? fx.Count : 0),
                 ["EXIT"]   = (disp.TryGetValue("EXIT",   out var e) ? e.Count : 0),
             },
             ["spend_at_risk_usd"]       = R2(spendAtRisk),

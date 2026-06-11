@@ -60,10 +60,15 @@ public static class DecisionHubEngine
             .ThenByDescending(r => (double)r["p50_npv_usd"]!)
             .ToList();
         var approved = ranked.Where(r => (string)r["verdict"]! is "APPROVE" or "PILOT").ToList();
-        var recommended = ranked.Count > 0 ? (object)ranked[0] : null;
+
+        // Emissions-first default recommendation (spec §13/§34) instead of top NPV/score.
+        var recRanked = RecommendationEngine.Rank(lanes, trade, carbonPrice);
+        var recId = recRanked.Count > 0 ? recRanked[RecommendationEngine.EmissionsFirstPick(recRanked)].ScenarioId : null;
+        var recommended = (recId is not null ? ranked.FirstOrDefault(r => (string)r["scenario_id"]! == recId) : null)
+            ?? (ranked.Count > 0 ? ranked[0] : null);
 
         var carrierDispositions = TransportationEngine.AllCarrierDispositions(lanes);
-        var funnel = RecommendationEngine.Funnel(RecommendationEngine.Rank(lanes, trade, carbonPrice));
+        var funnel = RecommendationEngine.Funnel(recRanked);
 
         return new Dictionary<string, object?>
         {

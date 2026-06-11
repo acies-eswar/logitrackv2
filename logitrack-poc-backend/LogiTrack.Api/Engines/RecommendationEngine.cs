@@ -160,10 +160,37 @@ public static class RecommendationEngine
         };
     }
 
+    /// <summary>
+    /// Emissions-first default recommendation (spec §13/§34/§94): among options with
+    /// acceptable business impact (Approve/Pilot and cost not materially up), pick the
+    /// highest emissions reduction; tie-break on Decision Score. Falls back to the
+    /// highest-emission option, then the top-ranked, so a pick always exists.
+    /// </summary>
+    public static int EmissionsFirstPick(List<Rec> ranked)
+    {
+        if (ranked.Count == 0) return 0;
+        bool Acceptable(Rec r) => (r.Verdict is "APPROVE" or "PILOT") && r.CostImpactPct <= 3.0;
+        var pool = ranked.Where(Acceptable).ToList();
+        if (pool.Count == 0) pool = ranked;
+        var best = pool
+            .OrderByDescending(r => r.EmissionsReductionPct)
+            .ThenByDescending(r => r.DecisionScore)
+            .First();
+        return ranked.FindIndex(r => r.ScenarioId == best.ScenarioId);
+    }
+
+    /// <summary>Scenario id of the emissions-first default recommendation.</summary>
+    public static string? RecommendedScenarioId(List<Row> lanes, List<Row> trade, double carbonPrice)
+    {
+        var ranked = Rank(lanes, trade, carbonPrice);
+        return ranked.Count == 0 ? null : ranked[EmissionsFirstPick(ranked)].ScenarioId;
+    }
+
     /// <summary>Full payload for the /recommendations endpoint and the executive hub.</summary>
     public static object Build(List<Row> lanes, List<Row> trade, double carbonPrice)
     {
         var ranked = Rank(lanes, trade, carbonPrice);
+        int recIdx = EmissionsFirstPick(ranked);
         var rows = new List<object>();
         for (int i = 0; i < ranked.Count; i++)
         {
@@ -173,7 +200,7 @@ public static class RecommendationEngine
                 ["rank"] = i + 1,
                 ["scenario_id"] = r.ScenarioId, ["name"] = r.Name, ["type"] = r.Type, ["lever"] = r.Lever,
                 ["category"] = r.Category, ["decision_score"] = r.DecisionScore, ["verdict"] = r.Verdict,
-                ["recommended_flag"] = i == 0,
+                ["recommended_flag"] = i == recIdx,
                 ["sub_scores"] = new Dictionary<string, object?>
                 {
                     ["sustainability"] = r.SusScore, ["financial"] = r.FinScore,
@@ -198,7 +225,7 @@ public static class RecommendationEngine
 
         return new Dictionary<string, object?>
         {
-            ["recommended"] = rows.Count > 0 ? rows[0] : null,
+            ["recommended"] = rows.Count > 0 ? rows[recIdx] : null,
             ["funnel"] = Funnel(ranked),
             ["by_category"] = byCategory,
             ["recommendations"] = rows,
