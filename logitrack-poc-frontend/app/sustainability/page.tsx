@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmtUSD, fmtNum, fmtCO2 } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Segmented, Badge, Select } from "@/components/ui";
-import { ScatterCard, HBarList, LineChartCard } from "@/components/charts";
+import { ScatterCard, HBarList, BarChartCard, CoverageBar } from "@/components/charts";
 
 // ─── Real Whirlpool product specs (Qingdao factory → Chicago DC supply chain) ──
 const WHIRLPOOL_SPECS = {
@@ -119,13 +119,12 @@ export default function SustainabilityPage() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
 
-  // Product preselected upfront (spec Module 5) — flows table shows every journey for it.
+  // Product preselected upfront (spec Module 5) - flows table shows every journey for it.
   const [selectedProduct, setSelectedProduct] = useState<string>("Refrigerator");
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [jView, setJView] = useState<"unit" | "annual">("unit");
 
-  const expandRow = useCallback((key: string) => {
-    setExpandedKey((current) => (current === key ? null : key));
-  }, []);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [drillData,   setDrillData]   = useState<Record<string, any>>({});
 
   const load = useCallback((carbonPrice: number, lvl: typeof level) => {
     setLoading(true);
@@ -141,6 +140,65 @@ export default function SustainabilityPage() {
 
   useEffect(() => { load(cp, level); }, [cp, level, load]);
 
+  useEffect(() => {
+    setDrillData({});
+    setExpandedKey(null);
+  }, [selectedProduct]);
+
+  const expandRow = useCallback((key: string) => {
+    if (expandedKey === key) { setExpandedKey(null); return; }
+    setExpandedKey(key);
+    if (drillData[key]) return;
+
+    if (selectedProduct && PRODUCT_JOURNEYS[selectedProduct]) {
+      const journey = PRODUCT_JOURNEYS[selectedProduct];
+      const spec = WHIRLPOOL_SPECS[selectedProduct as ProductName];
+      const kpis = journey.kpis;
+      const wtCapacity = Math.floor(26000 / spec.pkgKg);
+      // ensure total is present (guard against missing fields)
+      const totalKg = kpis.total_per_unit_kg_co2e ?? (kpis.transport_kg_co2e + kpis.handling_kg_co2e + kpis.packaging_kg_co2e);
+      // debug log to help trace which product keyed drill was generated
+      console.debug("sustainability: generating drill", { key, product: selectedProduct, totalKg });
+      setDrillData((prev) => ({
+        ...prev,
+        [key]: {
+          per_unit: {
+            transport_kg_co2e:  kpis.transport_kg_co2e,
+            handling_kg_co2e:   kpis.handling_kg_co2e,
+            packaging_kg_co2e:  kpis.packaging_kg_co2e,
+            total_kg_co2e:      totalKg,
+            bare_weight_kg:     spec.bareKg,
+            packaged_weight_kg: spec.pkgKg,
+            load_factor:        Math.round(spec.pkgKg / spec.bareKg * 100) / 100,
+            cost_usd:           kpis.total_per_unit_cost_usd,
+          },
+          capacity: {
+            units_per_container_volume: spec.upc,
+            units_per_container_weight: wtCapacity,
+            binding_constraint: spec.upc < wtCapacity ? "volume" : "weight",
+            container_fill_pct: 85,
+          },
+          family: selectedProduct,
+        },
+      }));
+      return;
+    }
+
+    api.unitDefaults().then((d: any) => {
+      const families: any[] = d.product_families ?? [];
+      const fam = families[2] ?? families[0];
+      if (!fam) return;
+      api.unitCompute({
+        product_family: fam.name, bare_weight_kg: fam.bare_weight_kg, packaged_weight_kg: fam.packaged_weight_kg,
+        container_fill_pct: 0.85, annual_volume: 50000,
+        legs: [
+          { mode: "ocean", distance_km: 12000, carrier: "Ocean Carrier" },
+          { mode: "road",  distance_km: 400,   carrier: "Road Carrier" },
+        ],
+        handling_events: ["port", "dc"],
+      }).then((r: any) => setDrillData((prev) => ({ ...prev, [key]: { ...r, family: fam.name } })));
+    });
+  }, [expandedKey, drillData, selectedProduct]);
 
   if (error) return <ApiError retry={() => load(cp, level)} />;
   if (!sum && loading) return <Spinner label="Computing landed cost & emissions..." />;
@@ -148,38 +206,12 @@ export default function SustainabilityPage() {
   // Journey data for selected product (null when none selected)
   const journey = selectedProduct ? PRODUCT_JOURNEYS[selectedProduct] : null;
   const jKpis = journey?.kpis;
-  const mult = 1;
+  const mult = jView === "annual" ? (jKpis?.annual_volume_default ?? 1) : 1;
 
-  // Hotspots bar chart — sorted by cost descending
+  // Hotspots bar chart - sorted by cost descending
   const hotspotData = [...PRODUCT_MATRIX]
     .sort((a, b) => b.x - a.x)
     .map((m) => ({ name: m.name, cost: m.x }));
-
-  // Drill data for per-unit view (derived from agg). Provide sensible defaults so UI renders.
-  const drillData: Record<string, any> = {};
-  (agg || []).forEach((a) => {
-    const key = a.key || "(unassigned)";
-    const per_unit_cost = a.avg_landed_cost_per_shipment ?? 0;
-    const per_unit_co2 = a.avg_landed_emissions_per_shipment ?? 0;
-    drillData[key] = {
-      per_unit: {
-        transport_kg_co2e: per_unit_co2 * 0.85,
-        handling_kg_co2e: per_unit_co2 * 0.10,
-        packaging_kg_co2e: per_unit_co2 * 0.05,
-        total_kg_co2e: per_unit_co2,
-        bare_weight_kg: a.avg_weight_kg ?? 1,
-        packaged_weight_kg: (a.avg_weight_kg ?? 1) * 1.08,
-        load_factor: a.load_factor ?? 0.85,
-        cost_usd: per_unit_cost,
-      },
-      capacity: {
-        units_per_container_volume: a.units_per_container_volume ?? 100,
-        units_per_container_weight: a.units_per_container_weight ?? 1000,
-        binding_constraint: a.binding_constraint ?? "volume",
-        container_fill_pct: a.container_fill_pct ?? 80,
-      },
-    };
-  });
 
   return (
     <>
@@ -192,7 +224,7 @@ export default function SustainabilityPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 whitespace-nowrap">Product</span>
               <Select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="min-w-[180px]">
-                <option value="" disabled>— Select a product —</option>
+                <option value="" disabled>- Select a product -</option>
                 {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
               </Select>
             </div>
@@ -208,13 +240,13 @@ export default function SustainabilityPage() {
         }
       />
 
-      {/* V3.0 — Emissions Intelligence: attribution, carbon economics, benchmarking */}
+      {/* V3.0 - Emissions Intelligence: attribution, carbon economics, benchmarking */}
       <EmissionsIntelligence cp={cp} />
 
-      {/* V3.0 — All end-to-end flows for the selected product (segments + attribution + apportioning) */}
+      {/* V3.0 - All end-to-end flows for the selected product (segments + attribution + apportioning) */}
       {selectedProduct && <ProductFlowsTable product={selectedProduct} />}
 
-      {/* Summary KPIs — per-unit only when product is selected */}
+      {/* Summary KPIs - per-unit only when product is selected */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {selectedProduct && jKpis ? (
           <>
@@ -233,7 +265,7 @@ export default function SustainabilityPage() {
         )}
       </div>
 
-      {/* Product-level charts — always visible (show all 5 products) */}
+      {/* Product-level charts - always visible (show all 5 products) */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <Card>
           <CardHeader>
@@ -260,7 +292,6 @@ export default function SustainabilityPage() {
           </CardBody>
         </Card>
       </div>
-
 
       {/* Landed Cost & Emissions Breakdown by Region/Facility/Category */}
       <Card>
@@ -400,7 +431,7 @@ function KV({ label, val }: { label: string; val: string }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Module 5 — Emissions Intelligence (LogiTrack V3.0)
+   Module 5 - Emissions Intelligence (LogiTrack V3.0)
    Where emissions originate, what they cost, how they can be reduced.
    ──────────────────────────────────────────────────────────────────────────── */
 const CP_CURVE = [0, 50, 75, 100, 150, 250];
@@ -427,7 +458,7 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
     return Object.entries(m).map(([name, v]) => ({ name: name[0].toUpperCase() + name.slice(1), value: Math.round(v) })).sort((a, b) => b.value - a.value);
   }, [em]);
   const total = em?.total_tco2e ?? 0;
-  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: p, cost: Math.round(total * p) })), [total]);
+  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: `$${p}`, cost: Math.round(total * p) })), [total]);
   const best = recs?.recommendations?.[0]?.emissions_reduction_pct ?? 0;
   const avoidance = total * (best / 100) * cp;
   const topLevers = (recs?.recommendations ?? []).slice(0, 5);
@@ -439,7 +470,7 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
       {/* attribution + transport sub-attribution */}
       <div className="grid lg:grid-cols-2 gap-5">
         <Card>
-          <CardHeader><CardTitle>Emissions Attribution — where they originate</CardTitle><Badge variant="green">{fmtCO2(total)} total</Badge></CardHeader>
+          <CardHeader><CardTitle>Emissions Attribution - where they originate</CardTitle><Badge variant="green">{fmtCO2(total)} total</Badge></CardHeader>
           <CardBody><HBarList data={attribution} valueKey="value" nameKey="name" /></CardBody>
         </Card>
         <Card>
@@ -460,9 +491,15 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Carbon cost sensitivity (price per tonne)</div>
-            <LineChartCard data={sensitivity} x="price" currency height={200} lines={[{ key: "cost", name: "Carbon cost exposure", color: "#d97706" }]} />
+            <BarChartCard data={sensitivity} x="price" currency height={200} bars={[{ key: "cost", name: "Carbon cost exposure", color: "#d97706" }]} />
           </div>
         </CardBody>
+      </Card>
+
+      {/* carbon coverage (FDD emissions confidence) */}
+      <Card>
+        <CardHeader><CardTitle>Carbon Coverage</CardTitle><Badge variant="blue">data confidence</Badge></CardHeader>
+        <CardBody><CoverageBar coverage={em?.carbon_coverage} /></CardBody>
       </Card>
 
       {/* benchmarking + alternatives */}
@@ -481,7 +518,7 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
                 {byMode.map((m) => (
                   <tr key={m.name} className="border-b border-slate-100 dark:border-slate-700">
                     <td className="px-4 py-2 font-medium text-ink-900 dark:text-white">{m.name}</td>
-                    <td className="px-4 py-2 text-right numeric text-slate-600 dark:text-slate-400">{GLEC_FACTORS[m.name.toLowerCase()] ?? "—"}</td>
+                    <td className="px-4 py-2 text-right numeric text-slate-600 dark:text-slate-400">{GLEC_FACTORS[m.name.toLowerCase()] ?? "-"}</td>
                     <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtCO2(m.value)}</td>
                     <td className="px-4 py-2 text-right numeric text-positive">{fmtNum(total ? (m.value / total) * 100 : 0, 1)}%</td>
                   </tr>
@@ -535,14 +572,14 @@ function ProductFlowsTable({ product }: { product: string }) {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle>End-to-End Flows — {product}</CardTitle>
+        <CardTitle>End-to-End Networks - {product}</CardTitle>
         <div className="flex items-center gap-2 flex-wrap">
-          {data && <Badge variant="blue">{flows.length} flows</Badge>}
+          {data && <Badge variant="blue">{flows.length} networks</Badge>}
           {data && <Badge variant="slate">UPC {data.units_per_container} · load factor {data.load_factor}</Badge>}
         </div>
       </CardHeader>
       <CardBody className="p-0">
-        {!data ? <div className="p-5"><Spinner label="Tracing product flows…" /></div> : flows.length === 0 ? (
+        {!data ? <div className="p-5"><Spinner label="Tracing product networks…" /></div> : flows.length === 0 ? (
           <div className="p-6 text-center text-slate-400 text-sm">No flows found for {product}.</div>
         ) : (
           <div className="overflow-x-auto">

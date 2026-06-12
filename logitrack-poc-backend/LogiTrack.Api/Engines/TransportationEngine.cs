@@ -4,7 +4,7 @@ using static LogiTrack.Api.Engines.Metrics;
 
 namespace LogiTrack.Api.Engines;
 
-/// <summary>Module 2 — Transportation Performance Management.</summary>
+/// <summary>Module 2 - Transportation Performance Management.</summary>
 public static class TransportationEngine
 {
     public static List<object> CarrierScorecards(List<Row> lanes)
@@ -96,7 +96,7 @@ public static class TransportationEngine
         return annualSavings > exitPenalty * 0.2 ? "EXIT" : "IMPROVE";
     }
 
-    // Carrier Score: w1=0.40 cost, w2=0.35 service, w3=0.25 emissions (0–100, higher=better)
+    // Carrier Score: w1=0.40 cost, w2=0.35 service, w3=0.25 emissions (0-100, higher=better)
     private static double CarrierScore(double otif, double intensity, double costPerShip,
         double netIntensity, double avgCostPerShip)
     {
@@ -131,7 +131,7 @@ public static class TransportationEngine
         double unitsPerShip = 50.0;
         double costPerUnit  = SafeDiv(freight, ship * unitsPerShip);
 
-        // exit analysis – estimate alternative carrier
+        // exit analysis - estimate alternative carrier
         double altRate = netCostPerShip * 0.93; // 7% improvement assumption
         double annualSavingsIfExit = (cCostPerShip - altRate) * ship;
         double exitPenalty = 250_000.0; // typical contract exit
@@ -307,7 +307,7 @@ public static class TransportationEngine
         };
     }
 
-    // ── Module 2 — Port Congestion Intelligence (spec §116–119) ──────────────────
+    // ── Module 2 - Port Congestion Intelligence (spec §116-119) ──────────────────
     // Idle Emissions = Waiting Days × Daily Fuel Burn × Emission Factor (spec §118),
     // displayed separately from transport emissions. Deterministic per-port congestion.
     public static List<object> PortCongestion(List<Row> lanes)
@@ -334,10 +334,10 @@ public static class TransportationEngine
         var rows = new List<(Dictionary<string, object?> row, double idle)>();
         foreach (var (name, v) in ports)
         {
-            // deterministic wait time 4–13 days from a stable name hash
+            // deterministic wait time 4-13 days from a stable name hash
             uint h = 2166136261;
             foreach (char c in name) { h ^= c; h *= 16777619; }
-            double wait = 4.0 + (h % 900) / 100.0;                  // 4.00–12.99 days
+            double wait = 4.0 + (h % 900) / 100.0;                  // 4.00-12.99 days
             double congestionIndex = Math.Round(wait / 13.0 * 100, MidpointRounding.AwayFromZero);
             double callsPerYear = Math.Max(1, v.journeys);
             double idle = R2(wait * dailyIdleCo2ePerCall * callsPerYear);

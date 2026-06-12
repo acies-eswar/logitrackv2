@@ -4,7 +4,7 @@ using static LogiTrack.Api.Engines.Metrics;
 
 namespace LogiTrack.Api.Engines;
 
-/// <summary>Module 1 — Network Intelligence &amp; Visibility.</summary>
+/// <summary>Module 1 - Network Intelligence &amp; Visibility.</summary>
 public static class NetworkEngine
 {
     private static readonly Dictionary<string, (string o, string d)> Role = new()
@@ -66,6 +66,7 @@ public static class NetworkEngine
             ["network_intensity_g_per_tkm"] = R2(SafeDiv(totalCo2 * 1_000_000, totalTkm)),
             ["by_segment"] = bySegment,
             ["by_mode"] = byMode,
+            ["carbon_coverage"] = Metrics.CarbonCoverage(lanes),
         };
     }
 

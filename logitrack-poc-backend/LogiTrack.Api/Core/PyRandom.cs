@@ -102,7 +102,7 @@ public sealed class PyRandom
         return y;
     }
 
-    /// <summary>random() — 53-bit resolution float in [0, 1), exactly as CPython.</summary>
+    /// <summary>random() - 53-bit resolution float in [0, 1), exactly as CPython.</summary>
     public double NextDouble()
     {
         uint a = GenrandUint32() >> 5; // 27 bits
@@ -113,11 +113,11 @@ public sealed class PyRandom
     /// <summary>uniform(a, b) == a + (b - a) * random().</summary>
     public double Uniform(double a, double b) => a + (b - a) * NextDouble();
 
-    /// <summary>randint(a, b) — inclusive integer in [a, b] like CPython.</summary>
+    /// <summary>randint(a, b) - inclusive integer in [a, b] like CPython.</summary>
     public int RandInt(int a, int b) => a + (int)(NextDouble() * (b - a + 1));
 
     /// <summary>
-    /// gauss(mu, sigma) — CPython's algorithm (cached spare via cos/sin of a shared radius).
+    /// gauss(mu, sigma) - CPython's algorithm (cached spare via cos/sin of a shared radius).
     /// </summary>
     public double Gauss(double mu, double sigma)
     {

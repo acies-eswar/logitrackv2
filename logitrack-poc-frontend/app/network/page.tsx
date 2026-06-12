@@ -5,8 +5,9 @@ import Link from "next/link";
 import { api, fmtUSD, fmtCO2, fmtNum, fmtPct } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Segmented, Select } from "@/components/ui";
 import { NetworkMap } from "@/components/charts/network-map";
+import { BarChartCard, CoverageBar } from "@/components/charts";
 
-/* Module 1 — Network Intelligence & Journey Visibility (LogiTrack V3.0).
+/* Module 1 - Network Intelligence & Journey Visibility (LogiTrack V3.0).
    "A supply chain journey explorer", not a network dashboard. */
 
 const CARBON_PRICES = [0, 50, 75, 100, 150, 250];
@@ -24,6 +25,10 @@ export default function NetworkPage() {
   const [recs, setRecs] = useState<any>(null);
   const [hotView, setHotView] = useState<"cost" | "emissions">("cost");
   const [selNode, setSelNode] = useState<string | null>(null);
+  const routeKeys = useMemo(() => {
+    if (!selNode || !graph) return null;
+    return new Set(buildRoute(graph, selNode).map((e: any) => `${e.from}__${e.to}`));
+  }, [graph, selNode]);
   const [error, setError] = useState(false);
 
   const load = useCallback(() => {
@@ -66,27 +71,35 @@ export default function NetworkPage() {
     <>
       <PageHeader
         title="Network Intelligence"
-        desc="Understand how products move through your supply chain and where emissions, cost and risk originate — before changing the future state."
+        desc="Understand how products move through your supply chain and where emissions, cost and risk originate - before changing the future state."
         actions={<Segmented options={CARBON_PRICES.map((c) => ({ value: String(c), label: `$${c}` }))} value={String(carbon)} onChange={(v) => setCarbon(Number(v))} />}
       />
 
+      {/* Row 1 - business KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         <KPI label="Total Journeys" value={fmtNum(sum.entity_counts.lanes)} desc="active lanes" />
         <KPI label="Annual Freight" value={fmtUSD(sum.total_annual_freight_usd)} accent="blue" />
         <KPI label="Avg Lead Time" value={`${fmtNum(derived.avgLead, 1)} d`} />
         <KPI label="Network Risk" value={`${derived.netRisk}`} accent={derived.netRisk < 40 ? "green" : derived.netRisk < 65 ? "amber" : "red"} desc="0-100" />
       </div>
+      {/* Row 2 - emissions KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KPI label="Annual Emissions" value={fmtCO2(sum.total_annual_co2e)} accent="green" />
-        <KPI label="Emission Intensity" value={`${fmtNum(sum.network_intensity_g_per_tkm, 1)}`} desc="gCO2e/tkm" />
+        <KPI label="Emission Intensity" value={`${fmtNum(sum.network_intensity_g_per_tkm, 1)}`} desc="gCO₂e/tkm" accent="green" />
         <KPI label="Carbon Cost Exposure" value={fmtUSD(derived.carbonExposure)} accent="amber" desc={`@ $${carbon}/t`} />
         <KPI label="Reduction Potential" value={fmtPct(derived.best)} accent="green" desc="best lever" />
       </div>
 
-      {/* Network map — click any facility to trace its end-to-end route */}
+      {/* Carbon coverage (FDD emissions confidence) */}
       <Card className="mb-6">
-        <CardHeader><CardTitle>End-to-End Network Visualization</CardTitle><Badge variant="blue">click a facility to trace its route · {graph.nodes.length} nodes</Badge></CardHeader>
-        <CardBody><NetworkMap nodes={graph.nodes} edges={graph.edges} selected={selNode} onSelect={setSelNode} /></CardBody>
+        <CardHeader><CardTitle>Carbon Coverage</CardTitle><Badge variant="blue">data confidence across the network</Badge></CardHeader>
+        <CardBody><CoverageBar coverage={sum.carbon_coverage} /></CardBody>
+      </Card>
+
+      {/* Network map - click any facility to trace its end-to-end route */}
+      <Card className="mb-6">
+        <CardHeader><CardTitle>End-to-End Network Visualization</CardTitle><Badge variant="blue">{selNode ? "showing selected route · click empty space to reset" : `click a facility to trace its route · ${graph.nodes.length} nodes`}</Badge></CardHeader>
+        <CardBody><NetworkMap nodes={graph.nodes} edges={graph.edges} selected={selNode} onSelect={setSelNode} highlightEdges={routeKeys} /></CardBody>
       </Card>
 
       {/* Route explorer driven by map selection */}
@@ -95,17 +108,17 @@ export default function NetworkPage() {
       {/* by-mode */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <Card><CardHeader><CardTitle>Emissions by Mode</CardTitle></CardHeader><CardBody>
-          <ModeBars data={modeData} valueKey="co2e" color="#0e9f6e" formatter={fmtCO2} />
+          <BarChartCard data={modeData} x="name" height={220} bars={[{ key: "co2e", name: "Annual CO₂e (t)", color: "#0e9f6e" }]} />
         </CardBody></Card>
         <Card><CardHeader><CardTitle>Cost by Mode</CardTitle></CardHeader><CardBody>
-          <ModeBars data={modeData} valueKey="freight" color="#1d4ed8" formatter={fmtUSD} />
+          <BarChartCard data={modeData} x="name" currency height={220} bars={[{ key: "freight", name: "Annual Freight (USD)", color: "#1d4ed8" }]} />
         </CardBody></Card>
       </div>
 
       {/* flows + hotspots */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6 items-start">
         <Card>
-          <CardHeader><CardTitle>Flow Analysis by Segment</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Network Analysis by Segment</CardTitle></CardHeader>
           <CardBody className="p-0">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
@@ -127,9 +140,9 @@ export default function NetworkPage() {
         <Card>
           <CardHeader><CardTitle>{hotView === "cost" ? "Cost" : "Emissions"} Hotspots: Top 10</CardTitle>
             <Segmented value={hotView} onChange={setHotView} options={[{ value: "cost", label: "Cost" }, { value: "emissions", label: "Emissions" }]} /></CardHeader>
-          <CardBody className="p-0 max-h-[308px] overflow-y-auto">
+          <CardBody className="p-0 max-h-[330px] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
+              <thead className="sticky top-0 z-10"><tr className="border-b border-slate-100 dark:border-slate-700 text-left bg-slate-50 dark:bg-slate-900/50">
                 <th className="px-5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Lane</th>
                 <th className="px-5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Mode</th>
                 <th className="px-5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 text-right">{hotView === "cost" ? "Freight" : "CO₂e"}</th>
@@ -163,7 +176,7 @@ export default function NetworkPage() {
   );
 }
 
-/* ── Route Explorer — end-to-end route through the facility clicked on the map ── */
+/* ── Route Explorer - end-to-end route through the facility clicked on the map ── */
 function buildRoute(graph: any, nodeId: string) {
   const edges: any[] = graph?.edges ?? [];
   const bestFrom = (id: string, used: Set<string>) =>
@@ -231,7 +244,7 @@ function RouteExplorer({ graph, selected, onClear }: { graph: any; selected: str
   );
 }
 
-/* ── Opportunity Insights (spec §92–94) ─────────────────────────────────────── */
+/* ── Opportunity Insights (spec §92-94) ─────────────────────────────────────── */
 function OpportunityInsights({ modeData, hot, sum }: { modeData: any[]; hot: any; sum: any }) {
   const insights = useMemo(() => {
     const out: { text: string; priority: "High" | "Medium" | "Low"; emissions: boolean }[] = [];
@@ -239,15 +252,15 @@ function OpportunityInsights({ modeData, hot, sum }: { modeData: any[]; hot: any
     const totFreight = modeData.reduce((a, m) => a + m.freight, 0) || 1;
     const air = modeData.find((m) => m.name === "Air");
     if (air && air.co2e > 0) {
-      out.push({ text: `Air freight is ${fmtPct((air.freight / totFreight) * 100)} of cost but ${fmtPct((air.co2e / totCo2) * 100)} of emissions — the highest-leverage modal-shift opportunity.`, priority: "High", emissions: true });
+      out.push({ text: `Air freight is ${fmtPct((air.freight / totFreight) * 100)} of cost but ${fmtPct((air.co2e / totCo2) * 100)} of emissions - the highest-leverage modal-shift opportunity.`, priority: "High", emissions: true });
     }
     const topEm = hot.emissions?.[0];
     if (topEm) out.push({ text: `Lane "${topEm.lane}" (${topEm.mode}) alone contributes ${fmtPct(topEm.pct_of_total)} of network emissions.`, priority: "High", emissions: true });
     const ocean = modeData.find((m) => m.name === "Ocean");
-    if (ocean) out.push({ text: `Ocean carries ${fmtPct((ocean.co2e / totCo2) * 100)} of emissions at ${fmtPct((ocean.freight / totFreight) * 100)} of cost — efficient backbone; focus optimization on carrier/route, not mode.`, priority: "Medium", emissions: true });
+    if (ocean) out.push({ text: `Ocean carries ${fmtPct((ocean.co2e / totCo2) * 100)} of emissions at ${fmtPct((ocean.freight / totFreight) * 100)} of cost - efficient backbone; focus optimization on carrier/route, not mode.`, priority: "Medium", emissions: true });
     const topCost = hot.cost?.[0];
-    if (topCost) out.push({ text: `Highest-cost lane "${topCost.lane}" is ${fmtPct(topCost.pct_of_total)} of freight spend — review carrier and consolidation.`, priority: "Medium", emissions: false });
-    out.push({ text: `Network emission intensity is ${fmtNum(sum.network_intensity_g_per_tkm, 1)} gCO₂e/tkm — benchmark against GLEC class factors in Sustainability.`, priority: "Low", emissions: true });
+    if (topCost) out.push({ text: `Highest-cost lane "${topCost.lane}" is ${fmtPct(topCost.pct_of_total)} of freight spend - review carrier and consolidation.`, priority: "Medium", emissions: false });
+    out.push({ text: `Network emission intensity is ${fmtNum(sum.network_intensity_g_per_tkm, 1)} gCO₂e/tkm - benchmark against GLEC class factors in Sustainability.`, priority: "Low", emissions: true });
     return out;
   }, [modeData, hot, sum]);
 
@@ -276,36 +289,6 @@ function FlowRow({ f }: { f: any }) {
       <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtUSD(f.freight_usd)}</td>
       <td className="px-4 py-2 text-right numeric text-ink-900 dark:text-white">{fmtCO2(f.co2e)}</td>
     </tr>
-  );
-}
-
-function ModeBars({ data, valueKey, color, formatter }: { data: any[]; valueKey: "co2e" | "freight"; color: string; formatter: (n: number) => string }) {
-  const rows = data
-    .filter((d) => (d[valueKey] ?? 0) > 0)
-    .sort((a, b) => (b[valueKey] ?? 0) - (a[valueKey] ?? 0));
-  const max = Math.max(...rows.map((r) => r[valueKey] ?? 0), 1);
-
-  if (rows.length === 0) {
-    return <div className="py-10 text-center text-sm text-slate-400">No mode data available.</div>;
-  }
-
-  return (
-    <div className="space-y-3 min-h-[220px]">
-      {rows.map((row) => {
-        const value = row[valueKey] ?? 0;
-        return (
-          <div key={row.name}>
-            <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-ink-900 dark:text-white">{row.name}</span>
-              <span className="numeric text-slate-600 dark:text-slate-300">{formatter(value)}</span>
-            </div>
-            <div className="h-3 rounded-full bg-slate-100 dark:bg-slate-800">
-              <div className="h-full rounded-full" style={{ width: `${Math.max(3, (value / max) * 100)}%`, background: color }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

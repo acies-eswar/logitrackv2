@@ -144,9 +144,9 @@ public static class ScenarioLibrary
         return list;
     }
 
-    // ─────────── Generated alternatives (spec §28: target 10–50 alternatives) ───────────
+    // ─────────── Generated alternatives (spec §28: target 10-50 alternatives) ───────────
     // Deterministic, data-safe expansion across the six recommendation categories
-    // (Route / Carrier / Modal / Supplier / Manufacturing / Hybrid — spec §26).
+    // (Route / Carrier / Modal / Supplier / Manufacturing / Hybrid - spec §26).
     private static IEnumerable<Scenario> Generated()
     {
         var rng = new Random(20260610);
@@ -212,7 +212,7 @@ public static class ScenarioLibrary
                 R(80_000, 200_000), R(100_000, 220_000), 0, R(0.15, 0.3), R(0.15, 0.3), R(0.2, 0.3)));
             id++;
         }
-        // Supplier Optimization (8) — nearshoring often costs a premium; emissions benefit varies.
+        // Supplier Optimization (8) - nearshoring often costs a premium; emissions benefit varies.
         for (int i = 0; i < 8; i++)
         {
             var oc = Pick(srcCountries);
@@ -222,7 +222,7 @@ public static class ScenarioLibrary
                 R(300_000, 950_000), R(400_000, 700_000), R(200_000, 420_000), R(0.4, 0.7), R(0.3, 0.5), R(0.35, 0.55)));
             id++;
         }
-        // Manufacturing Relocation (6) — capital-heavy, long-term: Strategic Transition.
+        // Manufacturing Relocation (6) - capital-heavy, long-term: Strategic Transition.
         var plantSegs = new[] { "Plant→Plant", "Plant→DC" };
         for (int i = 0; i < 6; i++)
         {
@@ -233,7 +233,7 @@ public static class ScenarioLibrary
                 R(0, 200_000), R(600_000, 1_400_000), 0, R(0.6, 0.85), R(0.25, 0.45), R(0.3, 0.5)));
             id++;
         }
-        // Hybrid Optimization (7) — compounded gains; a few are over-ambitious and get rejected.
+        // Hybrid Optimization (7) - compounded gains; a few are over-ambitious and get rejected.
         for (int i = 0; i < 7; i++)
         {
             var oc = Pick(srcCountries);

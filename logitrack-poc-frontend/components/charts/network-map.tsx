@@ -110,12 +110,11 @@ function continentPath(coords: [number, number][]): string {
   }).join(" ") + " Z";
 }
 
-export function NetworkMap({ nodes, edges, onSelect, selected }: { nodes: any[]; edges: any[]; onSelect?: (id: string) => void; selected?: string | null }) {
+export function NetworkMap({ nodes, edges, onSelect, selected, highlightEdges }: { nodes: any[]; edges: any[]; onSelect?: (id: string) => void; selected?: string | null; highlightEdges?: Set<string> | null }) {
   const [mounted, setMounted] = useState(false);
   const [colorBy, setColorBy] = useState<"segment" | "mode">("segment");
   const [segFilter, setSegFilter] = useState<string>("all");
   const [hover, setHover] = useState<string | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<number | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -213,26 +212,25 @@ export function NetworkMap({ nodes, edges, onSelect, selected }: { nodes: any[];
             const totalCo2 = group.reduce((s: number, g: any) => s + (g.co2e ?? 0), 0);
             const w = Math.max(0.5, Math.min(4.5, (totalCo2 / maxEdge) * 4.5));
             const hl = hover && (e.from === hover || e.to === hover);
-            const edgeSelected = selectedEdge === gi;
-            const op = selectedEdge !== null ? (edgeSelected ? 0.95 : 0.04) : hover ? (hl ? 0.9 : 0.06) : 0.45;
-            const color =
+            const inRoute = highlightEdges ? highlightEdges.has(`${e.from}__${e.to}`) : null;
+            const op = inRoute !== null
+              ? (inRoute ? 0.95 : 0.04)
+              : (hover ? (hl ? 0.9 : 0.06) : 0.45);
+            const baseColor =
               colorBy === "segment"
                 ? SEG_COLOR[e.segment] ?? "#64748b"
                 : MODE_COLOR[e.mode] ?? "#64748b";
+            const color = inRoute ? "#22d3ee" : baseColor;
+            const sw = inRoute ? Math.max(2.4, w) : w;
             return (
               <path
                 key={gi}
                 d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
                 fill="none"
                 stroke={color}
-                strokeWidth={edgeSelected ? Math.max(3, w + 2) : w}
+                strokeWidth={sw}
                 opacity={op}
                 strokeLinecap="round"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelectedEdge(edgeSelected ? null : gi);
-                }}
-                style={{ cursor: "pointer" }}
               />
             );
           })}
@@ -289,7 +287,7 @@ export function NetworkMap({ nodes, edges, onSelect, selected }: { nodes: any[];
                 key={n.id}
                 onMouseEnter={() => setHover(n.id)}
                 onMouseLeave={() => setHover(null)}
-                onClick={() => { setSelectedEdge(null); onSelect?.(n.id); }}
+                onClick={() => onSelect?.(n.id)}
                 style={{ cursor: "pointer" }}
               >
                 {selected === n.id && <circle cx={x} cy={y} r={r + 5} fill="none" stroke="#22d3ee" strokeWidth={2} />}

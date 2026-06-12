@@ -45,7 +45,7 @@ export const api = {
   carriers: () => get<any[]>("/transportation/carriers"),
   lanes: () => get<any[]>("/transportation/lanes"),
   transit: () => get<any[]>("/transportation/transit"),
-  // V3.0 — Port congestion & idle emissions
+  // V3.0 - Port congestion & idle emissions
   ports: () => get<any[]>("/transportation/ports"),
   // Module 5
   sustSummary: (cp = 75) => get<any>(`/sustainability/summary?carbon_price=${cp}`),
@@ -54,11 +54,11 @@ export const api = {
   sustByFacility: (cp = 75) => get<any[]>(`/sustainability/by-facility?carbon_price=${cp}`),
   sustByCategory: (cp = 75) => get<any[]>(`/sustainability/by-category?carbon_price=${cp}`),
   matrix: (cp = 75) => get<any[]>(`/sustainability/matrix?carbon_price=${cp}`),
-  // V3.0 — all end-to-end flows for a product family (segments, attribution, load factor)
+  // V3.0 - all end-to-end flows for a product family (segments, attribution, load factor)
   productFlows: (product = "Refrigerator") => get<any>(`/sustainability/product-flows?product=${encodeURIComponent(product)}`),
   // Module 3 + 6
   scenarios: () => get<any[]>("/scenarios"),
-  // V3.0 — ranked alternatives with Decision Score, categories, rationale, funnel
+  // V3.0 - ranked alternatives with Decision Score, categories, rationale, funnel
   recommendations: (cp = 75) => get<any>(`/recommendations?carbon_price=${cp}`),
   evaluate: (scenario_id: string, p: any = {}) => post<any>("/scenarios/evaluate", { scenario_id, ...p }),
   transition: (scenario_id: string, p: any = {}) => post<any>("/transition/evaluate", { scenario_id, ...p }),
@@ -71,16 +71,16 @@ export const api = {
   tms: () => get<any>("/tms"),
   // Module 4
   decisionHub: (cp = 75, wacc = 8.5, h = 5) => get<any>(`/decision-hub?carbon_price=${cp}&wacc_pct=${wacc}&horizon_years=${h}`),
-  // v2.0 — Network Journey
+  // v2.0 - Network Journey
   networkJourney: (product = "Medium HVAC-class", dc = "") =>
     get<any>(`/network/journey?product=${encodeURIComponent(product)}&dc=${encodeURIComponent(dc)}`),
-  // v2.0 — Carrier Decision Pack
+  // v2.0 - Carrier Decision Pack
   carrierPack: (carrier: string) =>
     get<any>(`/transportation/carrier-pack?carrier=${encodeURIComponent(carrier)}`),
-  // v2.0 — Unit engine
+  // v2.0 - Unit engine
   unitDefaults: () => get<any>("/unit/defaults"),
   unitCompute: (body: any) => post<any>("/unit/compute", body),
-  // v2.0 — Emissions factors
+  // v2.0 - Emissions factors
   emissionsFactors: () => get<any>("/emissions/factors"),
   // Data
   master: (k: string) => get<any[]>(`/master/${k}`),

@@ -4,7 +4,7 @@ using static LogiTrack.Api.Engines.Metrics;
 
 namespace LogiTrack.Api.Engines;
 
-/// <summary>Unit-level GLEC emissions engine (Sections 4.8–4.12 of spec).</summary>
+/// <summary>Unit-level GLEC emissions engine (Sections 4.8-4.12 of spec).</summary>
 public static class UnitEngine
 {
     // Product family reference data (spec Section 5A)
@@ -77,8 +77,8 @@ public static class UnitEngine
                 Factor("Rail",   "Intermodal, diesel/electric blend",         28.0),
                 Factor("Rail",   "Fully electric",                            16.0),
                 Factor("Rail",   "Fully diesel",                              35.0),
-                Factor("Road",   "Articulated HGV 32–34 t (general)",         86.0),
-                Factor("Road",   "Rigid truck 16–20 t (China)",              110.0),
+                Factor("Road",   "Articulated HGV 32-34 t (general)",         86.0),
+                Factor("Road",   "Rigid truck 16-20 t (China)",              110.0),
                 Factor("Road",   "Refrigerated (reefer)",                    102.0),
                 Factor("Air",    "Freighter (exception only)",               600.0),
                 Factor("Inland waterway", "Barge",                           31.0),

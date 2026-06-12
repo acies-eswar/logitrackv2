@@ -5,7 +5,7 @@ using static LogiTrack.Api.Engines.Metrics;
 namespace LogiTrack.Api.Engines;
 
 /// <summary>
-/// Module 5 — Cost &amp; Sustainability Intelligence.
+/// Module 5 - Cost &amp; Sustainability Intelligence.
 /// Landed cost = freight + duty + tariff + handling + carbon_cost.
 /// </summary>
 public static class SustainabilityEngine

@@ -6,11 +6,11 @@ import { api, fmtUSD, fmtCO2, fmtNum, fmtPct } from "@/lib/api";
 import {
   Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Button, Segmented,
 } from "@/components/ui";
-import { BarChartCard, WaterfallBar } from "@/components/charts";
+import { BarChartCard, WaterfallBar, CoverageBar } from "@/components/charts";
 import { useApprovals, setApproval, isApproved } from "@/lib/approvals";
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Module 4 — Executive Decision Hub (LogiTrack V3.0)
+   Module 4 - Executive Decision Hub (LogiTrack V3.0)
    A capital-allocation & decarbonization-prioritization engine. Every card
    answers: "where should we invest next?"
    ──────────────────────────────────────────────────────────────────────────── */
@@ -36,34 +36,39 @@ function scoreColor(s: number) {
 export default function DecisionHub() {
   const [carbon, setCarbon] = useState(75);
   const [hub, setHub] = useState<any>(null);
+  const [em, setEm] = useState<any>(null);
   const [error, setError] = useState(false);
   const queue = useApprovals();   // shared with Scenario Planning & Transition Economics
 
   const load = useCallback(() => {
     setError(false); setHub(null);
     api.decisionHub(carbon).then(setHub).catch(() => setError(true));
+    api.emissions(carbon).then(setEm).catch(() => setEm(null));
   }, [carbon]);
 
   useEffect(() => { load(); }, [load]);
 
   const scen: any[] = hub?.scenarios ?? [];
-  const approved = useMemo(() => scen.filter((s) => s.verdict === "APPROVE" || s.verdict === "PILOT"), [scen]);
+  // Only scenarios YOU approved in Scenario Planning feed the Executive Hub.
+  const approved = useMemo(() => scen.filter((s) => isApproved(queue[s.scenario_id])), [scen, queue]);
 
   const metrics = useMemo(() => {
-    const savings = hub?.portfolio?.total_potential_savings_usd ?? 0;
-    const invest = hub?.portfolio?.total_investment_usd ?? 0;
-    const emRed = hub?.portfolio?.total_emissions_reduction_co2e ?? 0;
+    const savings = approved.reduce((a, s) => a + Math.max(0, s.annual_savings_usd ?? 0), 0);
+    const invest = approved.reduce((a, s) => a + (s.investment_usd ?? 0), 0);
+    const emRed = approved.reduce((a, s) => a + Math.max(0, -(s.emissions_impact_co2e ?? 0)), 0);
     const npv = approved.reduce((a, s) => a + (s.p50_npv_usd ?? 0), 0);
     const roi = invest > 0 ? (savings / invest) * 100 : 0;
     const carbonAvoided = emRed * carbon;
     const readiness = approved.length ? approved.reduce((a, s) => a + (s.decision_score ?? 0), 0) / approved.length : 0;
-    return { savings, invest, emRed, npv, roi, carbonAvoided, readiness };
-  }, [hub, approved, carbon]);
+    const abatement = emRed > 0 ? -savings / emRed : 0;  // $/tCO2e, negative = saves money
+    return { savings, invest, emRed, npv, roi, carbonAvoided, readiness, abatement };
+  }, [approved, carbon]);
 
   if (error) return <ApiError retry={load} />;
-  if (!hub) return <Spinner label="Consolidating portfolio economics across 50 alternatives…" />;
+  if (!hub) return <Spinner label="Consolidating approved scenarios…" />;
 
-  const rec = hub.recommended_scenario;
+  // No single platform-crowned recommendation - reference the top of YOUR approved set.
+  const rec = [...approved].sort((a, b) => (b.decision_score ?? 0) - (a.decision_score ?? 0))[0] ?? null;
 
   return (
     <>
@@ -75,26 +80,36 @@ export default function DecisionHub() {
         }
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      {/* Row 1 - business KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
         <KPI label="Portfolio Savings" value={fmtUSD(metrics.savings)} accent="green" desc="annual, approved" />
         <KPI label="Investment Required" value={fmtUSD(metrics.invest)} accent="amber" desc="one-time" />
         <KPI label="Portfolio ROI" value={fmtPct(metrics.roi, 0)} accent="blue" desc="benefit ÷ invest" />
         <KPI label="Portfolio NPV" value={fmtUSD(metrics.npv)} accent="blue" desc="Σ P50 NPV" />
+        <KPI label="Scenarios Approved" value={`${Object.values(queue).filter(isApproved).length} / ${scen.length}`} desc="approved by you" />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      {/* Row 2 - emissions KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
         <KPI label="Emissions Reduction" value={fmtCO2(metrics.emRed)} accent="green" desc="annual CO₂e" />
         <KPI label="Carbon Cost Avoided" value={fmtUSD(metrics.carbonAvoided)} accent="green" desc={`@ $${carbon}/t`} />
-        <KPI label="Scenarios Approved" value={`${Object.values(queue).filter(isApproved).length} / ${scen.length}`} desc="approved by you" />
-        <KPI label="Strategic Readiness" value={fmtNum(metrics.readiness)} accent="blue" desc="avg decision score" />
+        <KPI label="Abatement Cost" value={`${fmtUSD(metrics.abatement)}/t`} accent={metrics.abatement <= 0 ? "green" : "amber"} desc="cost ÷ tCO₂e cut" />
       </div>
 
-      {/* Top initiative */}
-      {rec && <TopInitiative rec={rec} carbon={carbon} />}
 
-      {/* Prioritization matrix + portfolio sustainability */}
+      {approved.length === 0 && (
+        <Card className="mb-6">
+          <CardBody className="text-center py-12">
+            <div className="text-lg font-semibold text-ink-900 dark:text-white mb-1">No approved scenarios yet</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mb-5">The portfolio below reflects only the scenarios you approve. Approve recommendations in Scenario Planning, or in the decision queue here.</div>
+            <Link href="/scenarios"><span className="px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium">Go to Scenario Planning →</span></Link>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Prioritization matrix + portfolio sustainability (approved only) */}
       <div className="grid lg:grid-cols-[1.3fr_1fr] gap-5 mb-6">
-        <PrioritizationMatrix scen={scen} />
-        <SustainabilityImpact scen={scen} approved={approved} metrics={metrics} carbon={carbon} />
+        <PrioritizationMatrix scen={approved} />
+        <SustainabilityImpact scen={approved} approved={approved} metrics={metrics} carbon={carbon} />
       </div>
 
       {/* Financial bridge + roadmap */}
@@ -103,8 +118,17 @@ export default function DecisionHub() {
         <ExecutionRoadmap approved={approved} />
       </div>
 
-      {/* Portfolio ranking */}
-      <PortfolioRanking scen={scen} />
+      {/* Approved portfolio ranking */}
+      <PortfolioRanking scen={approved} />
+
+      {/* Carbon coverage + executive storyboard */}
+      <div className="grid lg:grid-cols-[1fr_1.4fr] gap-5 mb-6">
+        <Card>
+          <CardHeader><CardTitle>Carbon Coverage</CardTitle><div className="text-[11px] text-slate-400">data confidence</div></CardHeader>
+          <CardBody><CoverageBar coverage={em?.carbon_coverage} /></CardBody>
+        </Card>
+        <ExecutiveStoryboard rec={rec} metrics={metrics} scen={scen} approved={approved} />
+      </div>
     </>
   );
 }
@@ -143,7 +167,7 @@ function Funnel({ funnel }: { funnel: any }) {
   );
 }
 
-/* ── Top Recommended Initiative (spec §174–175) ─────────────────────────────── */
+/* ── Top Recommended Initiative (spec §174-175) ─────────────────────────────── */
 function TopInitiative({ rec, carbon }: { rec: any; carbon: number }) {
   return (
     <Card className="mb-6 border-brand/30 dark:border-cyan-400/30 bg-gradient-to-br from-brand-50/60 to-transparent dark:from-cyan-500/5">
@@ -179,7 +203,7 @@ function TopInitiative({ rec, carbon }: { rec: any; carbon: number }) {
   );
 }
 
-/* ── Investment Prioritization Matrix (spec §176–177) ───────────────────────── */
+/* ── Investment Prioritization Matrix (spec §176-177) ───────────────────────── */
 function PrioritizationMatrix({ scen }: { scen: any[] }) {
   const pts = scen.filter((s) => s.investment_usd >= 0);
   const maxInv = Math.max(...pts.map((s) => s.investment_usd), 1);
@@ -228,19 +252,16 @@ function PrioritizationMatrix({ scen }: { scen: any[] }) {
   );
 }
 
-/* ── Portfolio Sustainability Impact + reduction by lever (spec §179–180) ────── */
+/* ── Portfolio Sustainability Impact + reduction by lever (spec §179-180) ────── */
 function SustainabilityImpact({ scen, approved, metrics, carbon }: any) {
   const byLever = useMemo(() => {
     const m: Record<string, number> = {};
-    const source = approved.length
-      ? approved
-      : scen.filter((s: any) => Math.max(0, -s.emissions_impact_co2e) > 0).slice(0, 8);
-    source.forEach((s: any) => {
+    approved.forEach((s: any) => {
       const k = s.recommendation_category ?? s.lever ?? "Other";
       m[k] = (m[k] ?? 0) + Math.max(0, -s.emissions_impact_co2e);
     });
     return Object.entries(m).map(([name, v]) => ({ name, Reduction: Math.round(v) })).sort((a, b) => b.Reduction - a.Reduction);
-  }, [approved, scen]);
+  }, [approved]);
 
   return (
     <Card>
@@ -300,7 +321,7 @@ function ExecutionRoadmap({ approved }: { approved: any[] }) {
           <div key={q} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 min-h-[120px]">
             <div className="text-xs font-bold text-brand dark:text-cyan-400 mb-2">{q}</div>
             <div className="space-y-1.5">
-              {buckets[q].length === 0 && <div className="text-[11px] text-slate-400">—</div>}
+              {buckets[q].length === 0 && <div className="text-[11px] text-slate-400">-</div>}
               {buckets[q].map((s) => (
                 <div key={s.scenario_id} className="text-[11px] text-slate-700 dark:text-slate-300 leading-tight">
                   <span className="font-medium">{s.name}</span>
@@ -347,7 +368,7 @@ function PortfolioRanking({ scen }: { scen: any[] }) {
                   <td className="px-3 py-2 text-right numeric text-positive">{fmtPct(s.emissions_reduction_pct)}</td>
                   <td className="px-3 py-2 text-right numeric text-slate-600 dark:text-slate-400">{fmtUSD(s.investment_usd)}</td>
                   <td className="px-3 py-2 text-right numeric font-semibold text-brand dark:text-cyan-400">{fmtUSD(s.p50_npv_usd)}</td>
-                  <td className="px-3 py-2 text-right numeric text-slate-600 dark:text-slate-400">{s.payback_month ? `M${s.payback_month}` : "—"}</td>
+                  <td className="px-3 py-2 text-right numeric text-slate-600 dark:text-slate-400">{s.payback_month ? `M${s.payback_month}` : "-"}</td>
                   <td className={`px-3 py-2 text-right font-bold numeric ${scoreColor(s.decision_score)}`}>{Math.round(s.decision_score)}</td>
                   <td className="px-3 py-2 text-center"><Badge variant={VERDICT_VARIANT[s.verdict]}>{VERDICT_LABEL[s.verdict]}</Badge></td>
                 </tr>
@@ -360,13 +381,13 @@ function PortfolioRanking({ scen }: { scen: any[] }) {
   );
 }
 
-/* ── Executive Decision Queue (spec §183–184) — shared approvals ────────────── */
+/* ── Executive Decision Queue (spec §183-184) - shared approvals ────────────── */
 function DecisionQueue({ scen, queue }: any) {
   const pending = scen.filter((s: any) => s.decision_score >= 50).slice(0, 10);
   function cycle(id: string) { setApproval(id, QUEUE_NEXT[queue[id]] ?? "APPROVE"); }
   return (
     <Card className="mb-6">
-      <CardHeader><CardTitle>Executive Decision Queue</CardTitle><div className="text-[11px] text-slate-400">click a status to set Approve / Pilot / Reject — shared with Scenario Planning</div></CardHeader>
+      <CardHeader><CardTitle>Executive Decision Queue</CardTitle><div className="text-[11px] text-slate-400">click a status to set Approve / Pilot / Reject - shared with Scenario Planning</div></CardHeader>
       <CardBody className="space-y-2">
         {pending.map((s: any) => (
           <div key={s.scenario_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
@@ -380,6 +401,30 @@ function DecisionQueue({ scen, queue }: any) {
                 <Badge variant={VERDICT_VARIANT[queue[s.scenario_id]] ?? "slate"}>{VERDICT_LABEL[queue[s.scenario_id]] ?? "Pending"}</Badge>
               </button>
             </div>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
+  );
+}
+
+/* ── Executive Storyboard (FDD Module 6) ────────────────────────────────────── */
+function ExecutiveStoryboard({ rec, metrics, scen, approved }: any) {
+  const rows = [
+    { k: "Current State", t: `${scen.length} journeys evaluated · ${fmtUSD(metrics.invest)} capital in play · portfolio ROI ${fmtPct(metrics.roi, 0)}.` },
+    { k: "Problems", t: `Emissions and freight concentrated in a few high-intensity lanes; cost-led routing leaves ${fmtCO2(metrics.emRed)} of avoidable emissions on the table.` },
+    { k: "Opportunities", t: `${approved.length} initiatives clear the bar, led by ${rec?.name ?? "the top recommendation"} (${rec ? fmtPct(rec.emissions_reduction_pct) : "-"} emissions).` },
+    { k: "Recommendation", t: `Fund the win-win set first: ${fmtUSD(metrics.savings)}/yr savings at ${fmtUSD(metrics.abatement)}/tCO₂e abatement (negative = net saving).` },
+    { k: "Projected Outcome", t: `${fmtCO2(metrics.emRed)} reduced and ${fmtUSD(metrics.npv)} portfolio NPV without material revenue impact.` },
+  ];
+  return (
+    <Card>
+      <CardHeader><CardTitle>Executive Storyboard</CardTitle></CardHeader>
+      <CardBody className="space-y-2.5">
+        {rows.map((r) => (
+          <div key={r.k} className="flex gap-3">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-brand dark:text-cyan-400 w-32 shrink-0 pt-0.5">{r.k}</div>
+            <div className="text-sm text-slate-700 dark:text-slate-300">{r.t}</div>
           </div>
         ))}
       </CardBody>

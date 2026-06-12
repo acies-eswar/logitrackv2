@@ -130,7 +130,7 @@ public sealed class CoreController : ControllerBase
         [FromQuery(Name = "carbon_price")] double carbonPrice = Config.DefaultInternalCarbonPriceUsd)
         => EmissionsEngine.Build(_store.LanesInScope(), _store.GetObject("financial"), carbonPrice);
 
-    // ── TMS — Transportation Management System (aggregated) ──
+    // ── TMS - Transportation Management System (aggregated) ──
     [HttpGet("tms")]
     public object Tms()
     {

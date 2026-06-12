@@ -5,7 +5,7 @@ using static LogiTrack.Api.Engines.Metrics;
 namespace LogiTrack.Api.Engines;
 
 /// <summary>
-/// Decision Workbench — 8 finance-native insights for a single proposed change.
+/// Decision Workbench - 8 finance-native insights for a single proposed change.
 /// Wraps EconomicsEngine outputs and adds SFO, TTE (enhanced), Landed CvE, and CEM.
 /// </summary>
 public static class WorkbenchEngine

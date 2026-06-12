@@ -5,7 +5,7 @@ using static LogiTrack.Api.Engines.Metrics;
 namespace LogiTrack.Api.Engines;
 
 /// <summary>
-/// Emissions Intelligence — comprehensive logistics carbon footprint view.
+/// Emissions Intelligence - comprehensive logistics carbon footprint view.
 /// Covers breakdowns by source, scope, mode, and lane-level hotspots.
 /// </summary>
 public static class EmissionsEngine
@@ -104,6 +104,7 @@ public static class EmissionsEngine
             ["by_scope"]                      = byScope.ToDictionary(k => k.Key, k => (object)k.Value),
             ["hotspots"]                      = hotspots,
             ["monthly_trend"]                 = trend,
+            ["carbon_coverage"]               = Metrics.CarbonCoverage(lanes),
         };
     }
 }

@@ -3,7 +3,7 @@ using static LogiTrack.Api.Core.NumberUtil;
 
 namespace LogiTrack.Api.Engines;
 
-/// <summary>Module 4 — Executive Decision Hub.</summary>
+/// <summary>Module 4 - Executive Decision Hub.</summary>
 public static class DecisionHubEngine
 {
     public static object Build(List<Row> lanes, List<Row> trade, Row fin,

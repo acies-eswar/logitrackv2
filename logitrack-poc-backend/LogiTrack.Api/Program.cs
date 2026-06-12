@@ -4,7 +4,7 @@ using LogiTrack.Api.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// CORS — wide open to match the Python backend (frontend runs on :3000)
+// CORS - wide open to match the Python backend (frontend runs on :3000)
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 

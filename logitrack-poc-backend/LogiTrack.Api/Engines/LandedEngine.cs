@@ -5,7 +5,7 @@ using static LogiTrack.Api.Engines.Metrics;
 namespace LogiTrack.Api.Engines;
 
 /// <summary>
-/// Landed Cost vs Emissions — product-family and SKU-level decomposition.
+/// Landed Cost vs Emissions - product-family and SKU-level decomposition.
 /// Families = product categories from lanes. SKUs are derived per family.
 /// </summary>
 public static class LandedEngine

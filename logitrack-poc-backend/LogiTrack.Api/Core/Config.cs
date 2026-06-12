@@ -28,7 +28,7 @@ public static class Config
     // OTIF service threshold
     public const double OtifTargetPct = 95.0;
 
-    // Transition economics defaults (module 6 — assumption-based)
+    // Transition economics defaults (module 6 - assumption-based)
     public const double DefaultWaccPct = 8.5;
     public const double DefaultInternalCarbonPriceUsd = 75.0;
     public const int DefaultHorizonYears = 5;

@@ -5,7 +5,7 @@ using LogiTrack.Api.Core;
 
 namespace LogiTrack.Api.Engines;
 
-/// <summary>Ingestion — map an uploaded CSV to a dataset key by its column signature.</summary>
+/// <summary>Ingestion - map an uploaded CSV to a dataset key by its column signature.</summary>
 public static class IngestionEngine
 {
     // Required-field signatures per the scope's dataset definitions

@@ -9,14 +9,14 @@ namespace LogiTrack.Api.Engines;
 ///
 /// Implements the platform Decision Score (spec §66, §155, §187):
 ///   Decision Score = 35% Sustainability + 25% Financial + 15% Operational
-///                  + 15% Risk + 10% Strategic   (0–100)
+///                  + 15% Risk + 10% Strategic   (0-100)
 ///
 /// Plus recommendation categories (§27/§67/§142), executive verdict thresholds
-/// (§38/§68/§161 — Approve 80+, Pilot 65–80, Conditional 50–65, Reject &lt;50),
+/// (§38/§68/§161 - Approve 80+, Pilot 65-80, Conditional 50-65, Reject &lt;50),
 /// "why this won" rationale (§144) and rejected-scenario reasons (§154/§257).
 ///
 /// Scores are deterministic functions of the scenario levers + the live baseline,
-/// so the alternatives ranking is stable and fast (no Monte-Carlo needed here —
+/// so the alternatives ranking is stable and fast (no Monte-Carlo needed here -
 /// the full risk-adjusted NPV stays in EconomicsEngine for the detail views).
 /// </summary>
 public static class RecommendationEngine
@@ -59,7 +59,7 @@ public static class RecommendationEngine
             double emImpact = futCo2 - baseCo2;
             double reductionPct = -cd;                                  // fraction, +ve = reduction
 
-            // ── five-dimension sub-scores (0–100) ──
+            // ── five-dimension sub-scores (0-100) ──
             double sus = Clamp(35 + reductionPct / 0.40 * 65);
             double costGain = -fd + (-tariff) * 0.15;
             double fin = Clamp(50 + costGain / 0.20 * 45);
@@ -213,6 +213,10 @@ public static class RecommendationEngine
                 ["transit_impact_days"] = r.TransitImpactDays,
                 ["otif_impact_pts"] = r.OtifImpactPts,
                 ["investment_usd"] = r.InvestmentUsd,
+                // Abatement cost (FDD §Executive): cost change ÷ emissions reduction ($/tCO2e).
+                // Negative = the change reduces emissions AND saves money.
+                ["abatement_cost_usd_per_tco2e"] = r.EmissionsImpactCo2e < 0
+                    ? R2(SafeDiv(-r.AnnualSavingsUsd, -r.EmissionsImpactCo2e)) : (object?)null,
                 ["risk_score"] = r.RiskRaw, ["risk_rating"] = r.RiskRating,
                 ["affected_lane_count"] = r.AffectedLaneCount,
                 ["baseline"] = r.Baseline, ["future_state"] = r.Future,

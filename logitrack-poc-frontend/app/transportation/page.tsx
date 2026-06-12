@@ -86,7 +86,7 @@ export default function TransportationPage() {
     [lanes, modeF, search, product],
   );
 
-  // Must be before early returns — hooks order must be stable
+  // Must be before early returns - hooks order must be stable
   const dispositionSummary = useMemo(() => {
     const counts: Record<string, number> = { GROW: 0, RETAIN: 0, IMPROVE: 0, EXIT: 0 };
     const groups: Record<string, string[]> = { GROW: [], RETAIN: [], IMPROVE: [], EXIT: [] };
@@ -130,8 +130,8 @@ export default function TransportationPage() {
       </div>
       {/* End-to-end per-shipment metrics (full journey, not one segment) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPI label="End-to-End Cost / Shipment" value={prod.e2eCost != null ? fmtUSD(prod.e2eCost) : "— select product"} accent="blue" desc="sum of journey legs" />
-        <KPI label="End-to-End Emissions / Shipment" value={prod.e2eCo2 != null ? `${fmtNum(prod.e2eCo2, 2)} t` : "— select product"} accent="green" desc="sum of journey legs" />
+        <KPI label="End-to-End Cost / Shipment" value={prod.e2eCost != null ? fmtUSD(prod.e2eCost) : "- select product"} accent="blue" desc="sum of journey legs" />
+        <KPI label="End-to-End Emissions / Shipment" value={prod.e2eCo2 != null ? `${fmtNum(prod.e2eCo2, 2)} t` : "- select product"} accent="green" desc="sum of journey legs" />
         <KPI label="SLA Breaches" value={fmtNum(sum.sla_breaches)} sub={`of ${sum.lane_count} lanes`} accent={sum.sla_breaches > 0 ? "red" : "green"} />
         <KPI label="Avg Transit (lane)" value={`${fmtNum(prod.transit, 1)} d`} desc={`${prod.count} lanes`} />
       </div>
@@ -159,7 +159,7 @@ export default function TransportationPage() {
                   <div className="mt-2 flex flex-wrap gap-1 max-h-40 overflow-y-auto">
                     {names.length > 0 ? names.map((n) => (
                       <span key={n} className="text-[11px] px-1.5 py-0.5 rounded bg-white/70 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/50">{n}</span>
-                    )) : <span className="text-xs text-slate-400">—</span>}
+                    )) : <span className="text-xs text-slate-400">-</span>}
                   </div>
                 </div>
               );
@@ -197,7 +197,7 @@ export default function TransportationPage() {
                   <tr key={t.mode} className="border-b border-slate-50 dark:border-slate-700/50">
                     <td className="px-4 py-2.5 capitalize font-medium">{t.mode}</td>
                     <td className="px-4 py-2.5 text-right font-mono">{fmtNum(t.avg_days, 1)}d</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-slate-500">{t.min_days}–{t.max_days}d</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-slate-500">{t.min_days}-{t.max_days}d</td>
                   </tr>
                 ))}
               </tbody>
@@ -265,7 +265,7 @@ export default function TransportationPage() {
       {selectedCarrier && (
         <Card className="mb-6 border-brand/20 dark:border-brand/30">
           <CardHeader>
-            <CardTitle>Carrier Decision Pack — {selectedCarrier}</CardTitle>
+            <CardTitle>Carrier Decision Pack - {selectedCarrier}</CardTitle>
             <button onClick={() => { setSelectedCarrier(null); setPack(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕ Close</button>
           </CardHeader>
           <CardBody>
@@ -326,14 +326,14 @@ export default function TransportationPage() {
         </CardBody>
       </Card>
 
-      {/* V3.0 — Port congestion intelligence + transportation decarbonization */}
+      {/* V3.0 - Port congestion intelligence + transportation decarbonization */}
       <PortCongestion />
       <DecarbonizationOpportunities />
     </>
   );
 }
 
-/* ── Port Congestion Intelligence (spec §116–119) ───────────────────────────── */
+/* ── Port Congestion Intelligence (spec §116-119) ───────────────────────────── */
 function PortCongestion() {
   const [ports, setPorts] = useState<any[]>([]);
   const [sel, setSel] = useState<number | null>(null);
@@ -373,11 +373,11 @@ function PortCongestion() {
   );
 }
 
-/* ── Transportation Decarbonization Opportunities (spec §121–125) ───────────── */
+/* ── Transportation Decarbonization Opportunities (spec §121-125) ───────────── */
 function DecarbonizationOpportunities() {
   const [recs, setRecs] = useState<any[]>([]);
   useEffect(() => { api.recommendations(75).then((d) => setRecs(d.recommendations ?? [])).catch(() => setRecs([])); }, []);
-  // transportation-only levers: route / carrier / modal — no sourcing or plant change
+  // transportation-only levers: route / carrier / modal - no sourcing or plant change
   const opps = recs.filter((r) => ["route", "carrier", "modal_shift"].includes(r.type)).slice(0, 6);
   if (opps.length === 0) return null;
   return (

@@ -5,6 +5,7 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ScatterChart, Scatter, ReferenceLine, ComposedChart, ResponsiveContainer,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 import { CHART, SERIES, fmtUSD, fmtNum, fmtCO2 } from "@/lib/api";
 
@@ -70,7 +71,7 @@ const VERDICT_COLOR: Record<string, string> = {
 };
 function verdictColor(v: string) { return VERDICT_COLOR[v] ?? "#94a3b8"; }
 
-// ─── NPV Chart — HTML bars ──────────────────────────────────────────────────
+// ─── NPV Chart - HTML bars ──────────────────────────────────────────────────
 export function NPVChart({
   data,
 }: {
@@ -137,7 +138,7 @@ export function NPVChart({
   );
 }
 
-// ─── Horizontal Bar List — HTML-based (reliable for ranked lists) ───────────
+// ─── Horizontal Bar List - HTML-based (reliable for ranked lists) ───────────
 export function HBarList({
   data, valueKey, nameKey = "name",
   currency = false, color = CHART.blue, maxItems,
@@ -192,13 +193,13 @@ export function HBarList({
       </div>
       {/* x-axis scale hint */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6, paddingTop: 4, borderTop: `1px solid ${c.divider}` }}>
-        <span style={{ fontSize: 10, color: c.axis }}>← 0 — {currency ? fmtUSD(maxVal) : fmtNum(maxVal)} →</span>
+        <span style={{ fontSize: 10, color: c.axis }}>← 0 - {currency ? fmtUSD(maxVal) : fmtNum(maxVal)} →</span>
       </div>
     </div>
   );
 }
 
-// ─── Waterfall Bar — HTML-based ─────────────────────────────────────────────
+// ─── Waterfall Bar - HTML-based ─────────────────────────────────────────────
 export function WaterfallBar({
   data,
 }: {
@@ -288,7 +289,7 @@ export function BarChartCard({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <BarChart
           data={data}
           margin={{ top: topMargin, right: 10, left: 0, bottom: 4 }}
@@ -352,7 +353,7 @@ export function LineChartCard({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <LineChart
           data={data}
           margin={{ top: 6, right: 10, left: 0, bottom: 4 }}
@@ -392,7 +393,7 @@ export function AreaChartCard({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <AreaChart
           data={data}
           margin={{ top: 6, right: 10, left: 0, bottom: 4 }}
@@ -432,7 +433,7 @@ export function DonutCard({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <PieChart>
           <Pie
             data={data} dataKey="value" nameKey="name"
@@ -466,7 +467,7 @@ export function DualAxisBarChart({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <ComposedChart
           data={data}
           margin={{ top: 30, right: 50, left: 0, bottom: 4 }}
@@ -493,7 +494,7 @@ export function DualAxisBarChart({
   );
 }
 
-// ─── Scatter — explicit domain so all points across multiple <Scatter> show ─
+// ─── Scatter - explicit domain so all points across multiple <Scatter> show ─
 export function ScatterCard({
   data, height = 280,
   xLabel = "Cost / unit (USD)",
@@ -531,7 +532,7 @@ export function ScatterCard({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
         <ScatterChart
           margin={{ top: 8, right: 20, left: 10, bottom: 36 }}
         >
@@ -562,6 +563,62 @@ export function ScatterCard({
             />
           ))}
         </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── Carbon Coverage Bar (FDD Emissions Confidence Model) ────────────────────
+export function CoverageBar({ coverage }: { coverage: { measured_pct?: number; estimated_pct?: number; unknown_pct?: number } | null | undefined }) {
+  const m = coverage?.measured_pct ?? 0, e = coverage?.estimated_pct ?? 0, u = coverage?.unknown_pct ?? 0;
+  const seg = [
+    { label: "Measured", v: m, c: "#0e9f6e", note: "supplier-provided · high confidence" },
+    { label: "Estimated", v: e, c: "#1d4ed8", note: "GLEC factor-based · medium" },
+    { label: "Unknown", v: u, c: "#94a3b8", note: "no data · low" },
+  ];
+  return (
+    <div>
+      <div className="flex h-3 w-full rounded-full overflow-hidden">
+        {seg.map((s) => <div key={s.label} style={{ width: `${s.v}%`, background: s.c }} title={`${s.label} ${s.v}%`} />)}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+        {seg.map((s) => (
+          <span key={s.label} className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.c }} />
+            <span className="font-semibold text-ink-900 dark:text-white">{s.label} {s.v}%</span>
+            <span className="text-slate-400 hidden md:inline">· {s.note}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Radar / Spider (scenario lever comparison, FDD Module 3) ────────────────
+export function RadarCard({
+  data, series, height = 260,
+}: {
+  data: { axis: string; [k: string]: any }[];
+  series: { key: string; name: string; color?: string }[];
+  height?: number;
+}) {
+  const isDark = useIsDark();
+  const c = clr(isDark);
+  return (
+    <div style={{ width: "100%", height }}>
+      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
+        <RadarChart data={data} outerRadius="72%">
+          <PolarGrid stroke={c.grid} />
+          <PolarAngleAxis dataKey="axis" tick={{ fill: c.text, fontSize: 10 }} />
+          <PolarRadiusAxis domain={[0, 100]} tick={{ fill: c.subText, fontSize: 9 }} axisLine={false} />
+          {series.map((s, i) => (
+            <Radar key={s.key} name={s.name} dataKey={s.key}
+              stroke={s.color || SERIES[i % SERIES.length]} fill={s.color || SERIES[i % SERIES.length]}
+              fillOpacity={0.18} isAnimationActive={false} />
+          ))}
+          <Legend wrapperStyle={{ fontSize: 10, color: c.text }} iconSize={8} />
+          <Tooltip {...tipStyle(isDark)} formatter={(v: number) => [fmtNum(v, 0)]} />
+        </RadarChart>
       </ResponsiveContainer>
     </div>
   );
