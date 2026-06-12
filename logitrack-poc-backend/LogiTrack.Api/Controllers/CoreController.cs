@@ -56,6 +56,10 @@ public sealed class CoreController : ControllerBase
     public object ProductFlows([FromQuery(Name = "product")] string product = "Refrigerator")
         => UnitEngine.ProductFlows(_store.LanesInScope(), product);
 
+    [HttpGet("sustainability/dual-cost")]
+    public object DualCost([FromQuery(Name = "product")] string product = "Refrigerator")
+        => DualCostEngine.Build(_store.LanesInScope(), _store.GetRows("trade"), _store.GetRows("categories"), product);
+
     [HttpGet("transportation/carrier-pack")]
     public IActionResult CarrierPack([FromQuery(Name = "carrier")] string carrier = "")
     {

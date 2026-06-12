@@ -12,6 +12,7 @@ public sealed class Scenario
     public required string Description { get; init; }
 
     // Filter (any subset)
+    public string? FilterProductCategory { get; init; }
     public string? FilterOriginCountry { get; init; }
     public string? FilterSegment { get; init; }
     public string? FilterMode { get; init; }
@@ -32,6 +33,7 @@ public sealed class Scenario
     public List<Row> AffectedLanes(List<Row> lanes)
     {
         IEnumerable<Row> q = lanes;
+        if (FilterProductCategory is not null) q = q.Where(l => l.GetString("Product_Category") == FilterProductCategory);
         if (FilterOriginCountry is not null) q = q.Where(l => l.GetString("Origin_Country") == FilterOriginCountry);
         if (FilterSegment is not null) q = q.Where(l => l.GetString("Segment") == FilterSegment);
         if (FilterMode is not null) q = q.Where(l => l.GetString("Mode") == FilterMode);
@@ -41,212 +43,120 @@ public sealed class Scenario
 
 public static class ScenarioLibrary
 {
-    // ─────────── 8 hand-authored anchor scenarios ───────────
-    private static readonly List<Scenario> Anchors = new()
+    // Curated, realistic optimization opportunities. Each is a distinct, sensible
+    // decision (product / geography / lever specific) rather than a formulaic variant,
+    // so the AI recommendation list reads like real opportunities.
+    //   fields: id, name, type, lever, desc, prod, oc, sg, md,
+    //           freight%, transitDays, tariff%, co2%, otifPts, wc%,
+    //           exit$, it$, customs$, assetSpec, supConc, geoConc
+    private static readonly (string id, string name, string type, string lever, string desc,
+        string? prod, string? oc, string? sg, string? md,
+        double fd, int tt, double tar, double co2, double otif, double wc,
+        double exit, double it, double cust, double asset, double sup, double geo)[] Defs =
     {
-        new Scenario {
-            ScenarioId = "SCN-001", Name = "China \u2192 Mexico Supplier Shift",
-            Type = "supplier", Lever = "Sourcing relocation",
-            Description = "Relocate primary sourcing from China to Mexico suppliers feeding US plants. " +
-                          "Removes Section 232 tariff exposure, cuts ocean legs to short road lanes.",
-            FilterOriginCountry = "CN",
-            FreightDeltaPct = -0.16, TransitDeltaDays = -26, TariffDeltaPct = -0.45,
-            Co2eDeltaPct = -0.30, OtifDeltaPts = 2.0, WcDeltaPct = -0.12,
-            ContractExitUsd = 900_000, ItIntegrationUsd = 650_000, CustomsSetupUsd = 380_000,
-            AssetSpecificity = 0.65, SupplierConcentration = 0.45, GeoConcentration = 0.5,
-        },
-        new Scenario {
-            ScenarioId = "SCN-002", Name = "Ocean \u2192 Rail Modal Shift (Port\u2192Plant)",
-            Type = "modal_shift", Lever = "Modal conversion",
-            Description = "Convert eligible Port\u2192Plant ocean drayage+road to intermodal rail. " +
-                          "Lower cost and ~65% lower emissions, modest transit increase.",
-            FilterSegment = "Port\u2192Plant", FilterMode = "ocean",
-            FreightDeltaPct = -0.20, TransitDeltaDays = 2, TariffDeltaPct = 0.0,
-            Co2eDeltaPct = -0.55, OtifDeltaPts = -1.0, WcDeltaPct = 0.05,
-            ContractExitUsd = 150_000, ItIntegrationUsd = 120_000, CustomsSetupUsd = 0,
-            AssetSpecificity = 0.2, SupplierConcentration = 0.2, GeoConcentration = 0.25,
-        },
-        new Scenario {
-            ScenarioId = "SCN-003", Name = "Carrier Consolidation (Road)",
-            Type = "carrier", Lever = "Carrier rationalization",
-            Description = "Consolidate road carriers to strategic partners for volume leverage. " +
-                          "~9% rate reduction and improved OTIF; contract exit friction.",
-            FilterMode = "road",
-            FreightDeltaPct = -0.09, TransitDeltaDays = 0, TariffDeltaPct = 0.0,
-            Co2eDeltaPct = -0.04, OtifDeltaPts = 1.5, WcDeltaPct = 0.0,
-            ContractExitUsd = 700_000, ItIntegrationUsd = 260_000, CustomsSetupUsd = 0,
-            AssetSpecificity = 0.15, SupplierConcentration = 0.6, GeoConcentration = 0.2,
-        },
-        new Scenario {
-            ScenarioId = "SCN-004", Name = "DC Allocation Re-balance",
-            Type = "dc_allocation", Lever = "Distribution allocation",
-            Description = "Re-balance Plant\u2192DC flows toward higher-utilization DCs to lower " +
-                          "cost-to-serve and inventory holding. Slight transit penalty.",
-            FilterSegment = "Plant\u2192DC",
-            FreightDeltaPct = -0.07, TransitDeltaDays = 1, TariffDeltaPct = 0.0,
-            Co2eDeltaPct = -0.10, OtifDeltaPts = -0.5, WcDeltaPct = -0.18,
-            ContractExitUsd = 0, ItIntegrationUsd = 320_000, CustomsSetupUsd = 0,
-            AssetSpecificity = 0.4, SupplierConcentration = 0.25, GeoConcentration = 0.45,
-        },
-        new Scenario {
-            ScenarioId = "SCN-005", Name = "Plant Allocation Optimization",
-            Type = "plant_allocation", Lever = "Plant sourcing mix",
-            Description = "Shift inter-plant (Plant\u2192Plant) transfers to better-located plants, " +
-                          "reducing internal freight and emissions.",
-            FilterSegment = "Plant\u2192Plant",
-            FreightDeltaPct = -0.12, TransitDeltaDays = -1, TariffDeltaPct = 0.0,
-            Co2eDeltaPct = -0.14, OtifDeltaPts = 0.5, WcDeltaPct = 0.03,
-            ContractExitUsd = 0, ItIntegrationUsd = 180_000, CustomsSetupUsd = 0,
-            AssetSpecificity = 0.55, SupplierConcentration = 0.3, GeoConcentration = 0.35,
-        },
-        new Scenario {
-            ScenarioId = "SCN-006", Name = "Vietnam Dual-Sourcing",
-            Type = "supplier", Lever = "Supplier diversification",
-            Description = "Qualify Vietnam as a second source to reduce China concentration risk. " +
-                          "Small cost premium, large concentration-risk reduction.",
-            FilterOriginCountry = "CN",
-            FreightDeltaPct = 0.03, TransitDeltaDays = 4, TariffDeltaPct = -0.18,
-            Co2eDeltaPct = -0.05, OtifDeltaPts = 0.0, WcDeltaPct = 0.08,
-            ContractExitUsd = 150_000, ItIntegrationUsd = 420_000, CustomsSetupUsd = 220_000,
-            AssetSpecificity = 0.3, SupplierConcentration = 0.25, GeoConcentration = 0.3,
-        },
-        new Scenario {
-            ScenarioId = "SCN-007", Name = "Route Optimization (Supplier\u2192Plant)",
-            Type = "route", Lever = "Lane re-routing",
-            Description = "Re-route direct Supplier\u2192Plant lanes via optimized port pairs to cut " +
-                          "distance and dwell. Cost and emissions improvement.",
-            FilterSegment = "Supplier\u2192Plant",
-            FreightDeltaPct = -0.06, TransitDeltaDays = -2, TariffDeltaPct = 0.0,
-            Co2eDeltaPct = -0.08, OtifDeltaPts = 1.0, WcDeltaPct = 0.0,
-            ContractExitUsd = 0, ItIntegrationUsd = 90_000, CustomsSetupUsd = 0,
-            AssetSpecificity = 0.15, SupplierConcentration = 0.2, GeoConcentration = 0.25,
-        },
-        new Scenario {
-            ScenarioId = "SCN-008", Name = "India Sourcing for EU Plants",
-            Type = "supplier", Lever = "Sourcing relocation",
-            Description = "Source EU-plant components from India under preferential terms. Lower unit " +
-                          "freight, longer transit, modest emissions increase from added distance.",
-            FilterOriginCountry = "IN",
-            FreightDeltaPct = -0.10, TransitDeltaDays = 10, TariffDeltaPct = -0.20,
-            Co2eDeltaPct = 0.06, OtifDeltaPts = -1.5, WcDeltaPct = 0.10,
-            ContractExitUsd = 500_000, ItIntegrationUsd = 600_000, CustomsSetupUsd = 340_000,
-            AssetSpecificity = 0.5, SupplierConcentration = 0.4, GeoConcentration = 0.45,
-        },
+        // ── Modal optimization (largest emission levers) ──
+        ("SCN-001", "Convert Refrigerator air freight to ocean + rail", "modal_shift", "Modal conversion",
+            "Move expedited refrigerator air lanes to ocean plus inland intermodal rail. Large emissions and cost reduction for a few added transit days.",
+            "Refrigerator", null, null, "air", -0.34, 6, 0, -0.68, -1.0, 0.05, 120_000, 160_000, 0, 0.2, 0.25, 0.25),
+        ("SCN-002", "Cut Microwave air-freight dependency", "modal_shift", "Modal conversion",
+            "Shift high-volume microwave oven air shipments to ocean. Microwaves are light and high-density, so ocean economics are very favourable.",
+            "Microwave Oven", null, null, "air", -0.30, 7, 0, -0.71, -1.5, 0.06, 90_000, 140_000, 0, 0.18, 0.2, 0.22),
+        ("SCN-003", "Ocean drayage to intermodal rail (Port to Plant)", "modal_shift", "Modal conversion",
+            "Convert eligible Port to Plant ocean-plus-road drayage to intermodal rail. Lower cost and roughly half the emissions, modest transit increase.",
+            null, null, "Port→Plant", "ocean", -0.18, 2, 0, -0.52, -1.0, 0.04, 150_000, 130_000, 0, 0.2, 0.2, 0.25),
+        ("SCN-004", "Shift Washing Machine road lanes to rail", "modal_shift", "Modal conversion",
+            "Move long-haul washing machine truck lanes to rail. Meaningful emission reduction with a small lead-time and reliability trade-off.",
+            "Washing Machine", null, null, "road", -0.12, 2, 0, -0.44, -1.5, 0.03, 80_000, 110_000, 0, 0.2, 0.3, 0.25),
+        ("SCN-005", "Air Conditioner air to ocean conversion", "modal_shift", "Modal conversion",
+            "Convert seasonal air conditioner air freight to ocean ahead of the cooling season. Very large emissions cut; requires demand planning.",
+            "Air Conditioner", null, null, "air", -0.26, 8, 0, -0.66, -2.0, 0.08, 110_000, 150_000, 0, 0.25, 0.3, 0.28),
+
+        // ── Supplier / nearshoring ──
+        ("SCN-006", "Nearshore Refrigerator sourcing: China to Mexico", "supplier", "Sourcing relocation",
+            "Relocate refrigerator component sourcing from China to Mexico for US plants. Removes tariff exposure and replaces ocean legs with short road lanes.",
+            "Refrigerator", "CN", null, null, -0.15, -22, -0.45, -0.31, 2.0, -0.12, 850_000, 620_000, 360_000, 0.6, 0.45, 0.5),
+        ("SCN-007", "Dual-source Washing Machine parts in Vietnam", "supplier", "Supplier diversification",
+            "Qualify Vietnam as a second source for washing machine components to cut China concentration risk and tariffs at a small cost premium.",
+            "Washing Machine", "CN", null, null, 0.02, 4, -0.20, -0.08, 0.0, 0.07, 180_000, 420_000, 220_000, 0.3, 0.25, 0.3),
+        ("SCN-008", "Shift Dishwasher sourcing China to India", "supplier", "Sourcing relocation",
+            "Move dishwasher sourcing to India under preferential terms. Lower unit freight and tariffs, longer transit and modest emissions change.",
+            "Dishwasher", "CN", null, null, -0.11, 8, -0.22, -0.10, -1.0, 0.06, 420_000, 520_000, 300_000, 0.45, 0.4, 0.4),
+        ("SCN-009", "Korea to India sourcing for Air Conditioners", "supplier", "Sourcing relocation",
+            "Re-source air conditioner compressors from Korea to India. Lower landed cost, neutral emissions, improves geographic balance.",
+            "Air Conditioner", "KR", null, null, -0.09, 5, -0.12, -0.06, 0.5, 0.03, 300_000, 480_000, 200_000, 0.4, 0.35, 0.38),
+
+        // ── Carrier optimization ──
+        ("SCN-010", "Consolidate ocean carriers to low-intensity partners", "carrier", "Carrier rationalization",
+            "Consolidate ocean volume onto strategic carriers with newer, lower-intensity vessels for rate leverage and reduced emissions.",
+            null, null, null, "ocean", -0.07, 0, 0, -0.09, 1.0, 0.0, 450_000, 220_000, 0, 0.15, 0.55, 0.2),
+        ("SCN-011", "Road carrier rationalization (domestic lanes)", "carrier", "Carrier rationalization",
+            "Consolidate domestic road carriers to strategic partners for volume leverage and improved OTIF, with contract-exit friction.",
+            null, null, null, "road", -0.09, 0, 0, -0.05, 1.5, 0.0, 700_000, 260_000, 0, 0.15, 0.6, 0.2),
+
+        // ── Route optimization ──
+        ("SCN-012", "Re-route Supplier to Plant via optimized ports", "route", "Lane re-routing",
+            "Re-route direct supplier-to-plant lanes through optimized port pairs to cut distance and dwell. Cost and emissions improvement, no investment.",
+            null, null, "Supplier→Plant", null, -0.06, -2, 0, -0.09, 1.0, 0.0, 0, 90_000, 0, 0.15, 0.2, 0.25),
+        ("SCN-013", "Optimize Microwave DC-to-DC transfers", "route", "Lane re-routing",
+            "Reduce microwave oven inter-DC repositioning by re-balancing allocation. Lower internal freight and emissions.",
+            "Microwave Oven", null, "DC→DC", null, -0.08, -1, 0, -0.10, 0.5, -0.05, 0, 80_000, 0, 0.2, 0.25, 0.3),
+
+        // ── Manufacturing relocation ──
+        ("SCN-014", "Relocate Refrigerator assembly to renewable-powered plant", "plant_allocation", "Plant sourcing mix",
+            "Shift refrigerator final assembly toward plants on higher-renewable grids. Capital-intensive, strong long-term emission and energy benefit.",
+            "Refrigerator", null, "Plant→DC", null, -0.03, 2, 0, -0.18, 0.0, 0.0, 0, 1_100_000, 0, 0.7, 0.35, 0.4),
+        ("SCN-015", "Inter-plant transfer optimization", "plant_allocation", "Plant sourcing mix",
+            "Shift inter-plant transfers to better-located plants, reducing internal freight and emissions with modest capital.",
+            null, null, "Plant→Plant", null, -0.12, -1, 0, -0.14, 0.5, 0.03, 0, 280_000, 0, 0.55, 0.3, 0.35),
+
+        // ── Distribution optimization ──
+        ("SCN-016", "Shift distribution through Chennai DC", "dc_allocation", "Distribution allocation",
+            "Re-balance India-bound Plant to DC flows through a higher-utilization Chennai DC to lower cost-to-serve and inventory holding.",
+            null, "IN", "Plant→DC", null, -0.08, 1, 0, -0.11, -0.5, -0.18, 0, 320_000, 0, 0.4, 0.25, 0.45),
+        ("SCN-017", "Re-balance Dishwasher DC allocation", "dc_allocation", "Distribution allocation",
+            "Re-allocate dishwasher distribution toward higher-throughput DCs, releasing working capital with a slight transit penalty.",
+            "Dishwasher", null, "Plant→DC", null, -0.06, 1, 0, -0.08, -0.5, -0.15, 0, 280_000, 0, 0.4, 0.25, 0.4),
+
+        // ── Hybrid (compounded) ──
+        ("SCN-018", "Refrigerator network transition: Mexico sourcing + rail", "hybrid", "Supplier + mode + carrier",
+            "Combined China-to-Mexico refrigerator sourcing shift with intermodal rail and carrier consolidation for compounded cost and emission gains.",
+            "Refrigerator", "CN", null, null, -0.18, -14, -0.40, -0.34, 1.0, -0.10, 950_000, 720_000, 340_000, 0.6, 0.45, 0.5),
+        ("SCN-019", "Air Conditioner network: nearshore + modal shift", "hybrid", "Supplier + mode + carrier",
+            "Nearshore air conditioner sourcing combined with air-to-ocean conversion. Large emissions cut, significant investment, longer transit.",
+            "Air Conditioner", "CN", null, null, -0.10, 6, -0.30, -0.36, -1.0, 0.0, 700_000, 800_000, 300_000, 0.55, 0.4, 0.5),
+
+        // ── Strategic transition (capital-heavy, mostly emissions) ──
+        ("SCN-020", "Washing Machine sourcing China to Mexico", "supplier", "Sourcing relocation",
+            "Relocate washing machine sourcing to Mexico. Higher upfront cost and investment, strong emission and resilience improvement.",
+            "Washing Machine", "CN", null, null, 0.03, -18, -0.40, -0.28, 1.0, -0.10, 800_000, 700_000, 360_000, 0.65, 0.45, 0.5),
+
+        // ── Likely-rejected (visible bad options that build trust) ──
+        ("SCN-021", "Expedite Air Conditioners by air for peak season", "modal_shift", "Modal conversion",
+            "Switch a share of air conditioner ocean volume to air to protect peak-season service. Faster but far higher cost and emissions.",
+            "Air Conditioner", null, null, "ocean", 0.45, -12, 0, 1.40, 3.0, -0.05, 0, 40_000, 0, 0.1, 0.2, 0.2),
+        ("SCN-022", "Premium express carrier upgrade", "carrier", "Carrier rationalization",
+            "Upgrade to a premium express road carrier for service. Improves OTIF marginally at a notable cost premium and little emission benefit.",
+            null, null, null, "road", 0.12, -1, 0, -0.02, 2.5, 0.0, 200_000, 120_000, 0, 0.15, 0.5, 0.2),
+        ("SCN-023", "India sourcing for EU plants", "supplier", "Sourcing relocation",
+            "Source EU-plant components from India. Lower unit freight but much longer transit and higher emissions from added distance.",
+            null, "IN", null, null, -0.10, 12, -0.20, 0.08, -1.5, 0.10, 500_000, 600_000, 340_000, 0.5, 0.4, 0.45),
+
+        // ── Broad sustainability lever ──
+        ("SCN-024", "Network-wide ocean to rail intermodal program", "modal_shift", "Modal conversion",
+            "Roll out intermodal rail across eligible long-haul ocean-plus-road corridors network-wide. Large aggregate emission cut, phased investment.",
+            null, null, null, "ocean", -0.10, 3, 0, -0.40, -1.5, 0.05, 300_000, 400_000, 0, 0.3, 0.3, 0.3),
     };
 
-    /// <summary>Anchors + generated alternatives (the full evaluable library).</summary>
-    public static readonly List<Scenario> All = BuildAll();
-
-    private static List<Scenario> BuildAll()
+    public static readonly List<Scenario> All = Defs.Select(d => new Scenario
     {
-        var list = new List<Scenario>(Anchors);
-        list.AddRange(Generated());
-        return list;
-    }
+        ScenarioId = d.id, Name = d.name, Type = d.type, Lever = d.lever, Description = d.desc,
+        FilterProductCategory = d.prod, FilterOriginCountry = d.oc, FilterSegment = d.sg, FilterMode = d.md,
+        FreightDeltaPct = d.fd, TransitDeltaDays = d.tt, TariffDeltaPct = d.tar, Co2eDeltaPct = d.co2,
+        OtifDeltaPts = d.otif, WcDeltaPct = d.wc, ContractExitUsd = d.exit, ItIntegrationUsd = d.it,
+        CustomsSetupUsd = d.cust, AssetSpecificity = d.asset, SupplierConcentration = d.sup, GeoConcentration = d.geo,
+    }).ToList();
 
-    // ─────────── Generated alternatives (spec §28: target 10-50 alternatives) ───────────
-    // Deterministic, data-safe expansion across the six recommendation categories
-    // (Route / Carrier / Modal / Supplier / Manufacturing / Hybrid - spec §26).
-    private static IEnumerable<Scenario> Generated()
-    {
-        var rng = new Random(20260610);
-        double R(double lo, double hi) => lo + (hi - lo) * rng.NextDouble();
-        int Ri(int lo, int hi) => rng.Next(lo, hi + 1);
-        T Pick<T>(T[] a) => a[rng.Next(a.Length)];
-
-        var seg = new[] { "Supplier→Plant", "Plant→DC", "DC→DC", "Plant→Plant", "Port→Plant" };
-        var modes = new[] { "road", "ocean", "rail" };
-        var srcCountries = new[] { "CN", "VN", "IN", "MX", "KR", "DE", "TH", "PL" };
-        var srcCity = new Dictionary<string, string> {
-            ["CN"] = "China", ["VN"] = "Vietnam", ["IN"] = "India", ["MX"] = "Mexico",
-            ["KR"] = "Korea", ["DE"] = "Germany", ["TH"] = "Thailand", ["PL"] = "Poland",
-        };
-        var gen = new List<Scenario>();
-        int id = 9;
-        Scenario Make(string name, string type, string lever, string desc,
-            string? oc, string? sg, string? md,
-            double fd, int tt, double tar, double co2, double otif, double wc,
-            double exit, double it, double cust, double asset, double sup, double geo)
-            => new()
-            {
-                ScenarioId = $"SCN-{id:000}", Name = name, Type = type, Lever = lever, Description = desc,
-                FilterOriginCountry = oc, FilterSegment = sg, FilterMode = md,
-                FreightDeltaPct = fd, TransitDeltaDays = tt, TariffDeltaPct = tar, Co2eDeltaPct = co2,
-                OtifDeltaPts = otif, WcDeltaPct = wc, ContractExitUsd = exit, ItIntegrationUsd = it,
-                CustomsSetupUsd = cust, AssetSpecificity = asset, SupplierConcentration = sup, GeoConcentration = geo,
-            };
-
-        // Route Optimization (7)
-        for (int i = 0; i < 7; i++)
-        {
-            var sg = Pick(seg);
-            gen.Add(Make($"Route Optimization ({sg})", "route", "Lane re-routing",
-                $"Re-route {sg} flows through optimized port/hub pairs to cut distance, dwell and idle emissions.",
-                null, sg, null, -R(0.04, 0.09), -Ri(1, 3), 0, -R(0.05, 0.12), R(0.2, 1.4), R(-0.02, 0.03),
-                0, R(60_000, 180_000), 0, R(0.12, 0.25), R(0.18, 0.3), R(0.2, 0.32)));
-            id++;
-        }
-        // Carrier Optimization (7)
-        for (int i = 0; i < 7; i++)
-        {
-            var md = Pick(modes);
-            gen.Add(Make($"Carrier Consolidation ({md})", "carrier", "Carrier rationalization",
-                $"Consolidate {md} carriers onto strategic, lower-intensity partners for rate leverage and better OTIF.",
-                null, null, md, -R(0.05, 0.12), 0, 0, -R(0.03, 0.09), R(0.5, 2.0), 0,
-                R(250_000, 750_000), R(120_000, 300_000), 0, R(0.12, 0.2), R(0.45, 0.65), R(0.15, 0.25)));
-            id++;
-        }
-        // Modal Optimization (7)
-        var modalDefs = new[] {
-            ("Ocean → Rail Modal Shift", "ocean", 2, -0.55), ("Road → Rail Modal Shift", "road", 1, -0.45),
-            ("Air → Ocean Conversion", "air", 6, -0.72), ("Road → Rail (Inland)", "road", 2, -0.40),
-            ("Ocean → Rail (Drayage)", "ocean", 3, -0.58), ("Air → Rail Conversion", "air", 4, -0.60),
-            ("Road → Intermodal", "road", 2, -0.42),
-        };
-        // Modal: some carry a cost premium for speed/reliability → Sustainability-First, not Win-Win.
-        foreach (var (nm, md, tt, co2) in modalDefs)
-        {
-            gen.Add(Make(nm, "modal_shift", "Modal conversion",
-                $"Convert eligible {md} legs to lower-emission intermodal rail/ocean. Large emissions cut; cost may rise modestly.",
-                null, null, md, R(-0.18, 0.06), tt, 0, co2 + R(-0.04, 0.04), -R(0, 1.5), R(0, 0.06),
-                R(80_000, 200_000), R(100_000, 220_000), 0, R(0.15, 0.3), R(0.15, 0.3), R(0.2, 0.3)));
-            id++;
-        }
-        // Supplier Optimization (8) - nearshoring often costs a premium; emissions benefit varies.
-        for (int i = 0; i < 8; i++)
-        {
-            var oc = Pick(srcCountries);
-            gen.Add(Make($"{srcCity[oc]} Supplier Reallocation", "supplier", "Sourcing relocation",
-                $"Shift sourcing away from {srcCity[oc]} toward lower-tariff, nearer-shore suppliers feeding the same plants.",
-                oc, null, null, R(-0.12, 0.12), Ri(-24, 10), -R(0.15, 0.45), R(-0.30, 0.06), R(-1.5, 2.0), R(-0.12, 0.10),
-                R(300_000, 950_000), R(400_000, 700_000), R(200_000, 420_000), R(0.4, 0.7), R(0.3, 0.5), R(0.35, 0.55)));
-            id++;
-        }
-        // Manufacturing Relocation (6) - capital-heavy, long-term: Strategic Transition.
-        var plantSegs = new[] { "Plant→Plant", "Plant→DC" };
-        for (int i = 0; i < 6; i++)
-        {
-            var sg = Pick(plantSegs);
-            gen.Add(Make($"Manufacturing Reallocation ({sg})", "plant_allocation", "Plant sourcing mix",
-                $"Relocate {sg} production/transfers to better-located, higher-renewable plants. Long-term emissions benefit, capital-intensive.",
-                null, sg, null, R(-0.06, 0.05), Ri(-2, 4), 0, -R(0.08, 0.20), R(-0.5, 1.0), R(-0.05, 0.05),
-                R(0, 200_000), R(600_000, 1_400_000), 0, R(0.6, 0.85), R(0.25, 0.45), R(0.3, 0.5)));
-            id++;
-        }
-        // Hybrid Optimization (7) - compounded gains; a few are over-ambitious and get rejected.
-        for (int i = 0; i < 7; i++)
-        {
-            var oc = Pick(srcCountries);
-            gen.Add(Make($"Hybrid Transition ({srcCity[oc]})", "hybrid", "Supplier + mode + carrier",
-                $"Combined supplier shift, modal conversion and carrier consolidation across the {srcCity[oc]} network for compounded gains.",
-                oc, null, null, R(-0.16, 0.08), Ri(0, 8), -R(0.20, 0.40), R(-0.40, 0.05), R(-1.5, 1.5), R(-0.10, 0.08),
-                R(400_000, 1_200_000), R(500_000, 900_000), R(150_000, 380_000), R(0.45, 0.7), R(0.3, 0.5), R(0.35, 0.55)));
-            id++;
-        }
-        return gen;
-    }
-
-    /// <summary>Maps a scenario type to its PDF recommendation-category label (spec §26).</summary>
+    /// <summary>Maps a scenario type to its recommendation-category label.</summary>
     public static string CategoryOf(Scenario s) => s.Type switch
     {
         "route" => "Route Optimization",

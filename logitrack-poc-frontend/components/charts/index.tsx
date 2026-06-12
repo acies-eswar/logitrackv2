@@ -273,75 +273,53 @@ export function WaterfallTooltipBar({
 // ─── Vertical Bar Chart ─────────────────────────────────────────────────────
 export function BarChartCard({
   data, x, bars, height = 200, currency = false,
-  xLabel, yLabel,
 }: {
   data: any[]; x: string; bars: { key: string; name: string; color?: string }[];
   height?: number; currency?: boolean;
-  xLabel?: string; yLabel?: string;
-  // keep horizontal as no-op for API compat
-  horizontal?: boolean; yAxisWidth?: number;
+  xLabel?: string; yLabel?: string; horizontal?: boolean; yAxisWidth?: number;
 }) {
   const isDark = useIsDark();
   const c = clr(isDark);
-  const hasLegend = bars.length > 1;
-  const topMargin = hasLegend ? 30 : 6;
-  const bottomHeight = data.length > 5 ? 60 : 28;
-
+  const fmt = (v: number) => (currency ? fmtUSD(v) : fmtNum(v, 1));
+  const max = Math.max(...data.flatMap((d) => bars.map((b) => Number(d[b.key]) || 0)), 1);
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
-        <BarChart
-          data={data}
-          margin={{ top: topMargin, right: 10, left: 0, bottom: 4 }}
-          barCategoryGap="28%"
-        >
-          {gridEl(isDark)}
-          <XAxis
-            dataKey={x} {...axisCfg(isDark)} interval={0}
-            angle={data.length > 5 ? -35 : 0}
-            textAnchor={data.length > 5 ? "end" : "middle"}
-            height={bottomHeight}
-            tickFormatter={(v: string) => v && v.length > 14 ? v.slice(0, 12) + "…" : v}
-            label={xLabel ? { value: xLabel, position: "insideBottom", offset: -4, fontSize: 10, fill: c.axis } : undefined}
-          />
-          <YAxis
-            {...axisCfg(isDark)}
-            tickFormatter={(v) => currency ? fmtUSD(v) : fmtNum(v)}
-            width={currency ? 60 : 40}
-            label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", offset: 14, fontSize: 10, fill: c.axis } : undefined}
-          />
-          <Tooltip
-            {...tipStyle(isDark)}
-            labelFormatter={(label: any) => {
-              if (typeof label === "number" && data[label] !== undefined) {
-                return String(data[label][x] ?? label);
-              }
-              return String(label ?? "");
-            }}
-            formatter={(v: number, name: string) => [currency ? fmtUSD(v, false) : fmtNum(v, 1), name]}
-          />
-          {hasLegend && (
-            <Legend
-              verticalAlign="top" align="right"
-              wrapperStyle={{ fontSize: 10, color: c.text, paddingBottom: 6 }}
-              iconSize={8}
-            />
-          )}
-          {bars.map((b, i) => (
-            <Bar
-              key={b.key} dataKey={b.key} name={b.name}
-              fill={b.color || SERIES[i % SERIES.length]}
-              radius={[3, 3, 0, 0]}
-              minPointSize={0} isAnimationActive={false}
-            />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
+    <div style={{ width: "100%", height }} className="flex flex-col">
+      <div className="flex-1 flex items-end gap-2 px-1" style={{ minHeight: 0 }}>
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full" style={{ minWidth: 0 }}>
+            <div className="flex items-end justify-center gap-0.5 w-full" style={{ height: "calc(100% - 16px)" }}>
+              {bars.map((b, bi) => {
+                const v = Number(d[b.key]) || 0;
+                return (
+                  <div key={bi} title={`${b.name}: ${fmt(v)}`}
+                    style={{ height: `${Math.max(1, (v / max) * 100)}%`,
+                      width: bars.length > 1 ? `${Math.max(10, 44 / bars.length)}%` : "60%",
+                      minWidth: 4, background: b.color || SERIES[bi % SERIES.length],
+                      borderRadius: "3px 3px 0 0" }} />
+                );
+              })}
+            </div>
+            <div className="text-[9px] text-center truncate w-full mt-1" style={{ color: c.text }}>
+              {String(d[x] ?? "").length > 11 ? String(d[x]).slice(0, 10) + "…" : d[x]}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between mt-1" style={{ borderTop: `1px solid ${c.divider}`, paddingTop: 3 }}>
+        {bars.length > 1 ? (
+          <div className="flex gap-3 flex-wrap">
+            {bars.map((b, bi) => (
+              <span key={bi} className="flex items-center gap-1 text-[10px]" style={{ color: c.text }}>
+                <span className="w-2 h-2 rounded-sm" style={{ background: b.color || SERIES[bi % SERIES.length] }} />{b.name}
+              </span>
+            ))}
+          </div>
+        ) : <span />}
+        <span className="text-[9px]" style={{ color: c.axis }}>max {fmt(max)}</span>
+      </div>
     </div>
   );
 }
-
-// ─── Line Chart ────────────────────────────────────────────────────────────
 export function LineChartCard({
   data, x, lines, height = 200, currency = false, refZero = false,
 }: {
@@ -350,39 +328,30 @@ export function LineChartCard({
 }) {
   const isDark = useIsDark();
   const c = clr(isDark);
-
+  const vals = data.flatMap((d) => lines.map((l) => Number(d[l.key]) || 0));
+  let min = Math.min(...vals, 0), max = Math.max(...vals, 1);
+  if (min === max) max = min + 1;
+  const X = (i: number) => (data.length <= 1 ? 0 : (i / (data.length - 1)) * 100);
+  const Y = (v: number) => 100 - ((v - min) / (max - min)) * 100;
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
-        <LineChart
-          data={data}
-          margin={{ top: 6, right: 10, left: 0, bottom: 4 }}
-        >
-          {gridEl(isDark)}
-          <XAxis dataKey={x} {...axisCfg(isDark)} />
-          <YAxis {...axisCfg(isDark)} tickFormatter={(v) => currency ? fmtUSD(v) : fmtNum(v)} width={currency ? 60 : 40} />
-          <Tooltip
-            {...tipStyle(isDark)}
-            formatter={(v: number) => [currency ? fmtUSD(v, false) : fmtNum(v, 1)]}
-          />
-          {lines.length > 1 && (
-            <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 10, color: c.text }} iconSize={8} />
-          )}
-          {refZero && <ReferenceLine y={0} stroke={c.axis} strokeDasharray="3 3" />}
-          {lines.map((l, i) => (
-            <Line
-              key={l.key} type="monotone" dataKey={l.key} name={l.name}
-              stroke={l.color || SERIES[i % SERIES.length]} strokeWidth={2}
-              dot={false} isAnimationActive={false}
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
+    <div style={{ width: "100%", height }} className="flex flex-col">
+      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ flex: 1, minHeight: 0 }}>
+        {refZero && min < 0 && <line x1={0} x2={100} y1={Y(0)} y2={Y(0)} stroke={c.axis} strokeWidth={0.4} strokeDasharray="2 2" />}
+        {lines.map((l, li) => (
+          <polyline key={li}
+            points={data.map((d, i) => `${X(i)},${Y(Number(d[l.key]) || 0)}`).join(" ")}
+            fill="none" stroke={l.color || SERIES[li % SERIES.length]} strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[9px] mt-1" style={{ color: c.axis, borderTop: `1px solid ${c.divider}`, paddingTop: 3 }}>
+        <span>{data.length ? String(data[0][x]) : ""}</span>
+        <span>max {currency ? fmtUSD(max) : fmtNum(max, 1)}</span>
+        <span>{data.length ? String(data[data.length - 1][x]) : ""}</span>
+      </div>
     </div>
   );
 }
-
-// ─── Area Chart ────────────────────────────────────────────────────────────
 export function AreaChartCard({
   data, x, area, height = 200, currency = false, color = CHART.blue,
 }: {
@@ -390,39 +359,29 @@ export function AreaChartCard({
 }) {
   const isDark = useIsDark();
   const c = clr(isDark);
-
+  const vals = data.map((d) => Number(d[area]) || 0);
+  let min = Math.min(...vals, 0), max = Math.max(...vals, 1);
+  if (min === max) max = min + 1;
+  const X = (i: number) => (data.length <= 1 ? 0 : (i / (data.length - 1)) * 100);
+  const Y = (v: number) => 100 - ((v - min) / (max - min)) * 100;
+  const line = data.map((d, i) => `${X(i)},${Y(Number(d[area]) || 0)}`).join(" ");
+  const fill = `0,100 ${line} 100,100`;
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
-        <AreaChart
-          data={data}
-          margin={{ top: 6, right: 10, left: 0, bottom: 4 }}
-        >
-          <defs>
-            <linearGradient id={`ag-${area}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={color} stopOpacity={0.28} />
-              <stop offset="95%" stopColor={color} stopOpacity={0.01} />
-            </linearGradient>
-          </defs>
-          {gridEl(isDark)}
-          <XAxis dataKey={x} {...axisCfg(isDark)} />
-          <YAxis {...axisCfg(isDark)} tickFormatter={(v) => currency ? fmtUSD(v) : fmtNum(v)} width={currency ? 60 : 40} />
-          <Tooltip
-            {...tipStyle(isDark)}
-            formatter={(v: number) => [currency ? fmtUSD(v, false) : fmtNum(v, 1)]}
-          />
-          <ReferenceLine y={0} stroke={c.axis} strokeDasharray="3 3" />
-          <Area
-            type="monotone" dataKey={area} stroke={color} strokeWidth={1.5}
-            fill={`url(#ag-${area})`} isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div style={{ width: "100%", height }} className="flex flex-col">
+      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ flex: 1, minHeight: 0 }}>
+        <polygon points={fill} fill={color} fillOpacity={0.16} />
+        {min < 0 && <line x1={0} x2={100} y1={Y(0)} y2={Y(0)} stroke={c.axis} strokeWidth={0.4} strokeDasharray="2 2" />}
+        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+      </svg>
+      <div className="flex justify-between text-[9px] mt-1" style={{ color: c.axis, borderTop: `1px solid ${c.divider}`, paddingTop: 3 }}>
+        <span>{data.length ? String(data[0][x]) : ""}</span>
+        <span>{currency ? fmtUSD(max) : fmtNum(max, 1)}</span>
+        <span>{data.length ? String(data[data.length - 1][x]) : ""}</span>
+      </div>
     </div>
   );
 }
-
-// ─── Donut ─────────────────────────────────────────────────────────────────
+// ─── Donut - SVG composition (share of total), reliable without recharts ─────
 export function DonutCard({
   data, height = 240, currency = false,
 }: {
@@ -430,25 +389,39 @@ export function DonutCard({
 }) {
   const isDark = useIsDark();
   const c = clr(isDark);
-
+  const fmt = (v: number) => (currency ? fmtUSD(v, false) : fmtNum(v, 1));
+  const rows = data.filter((d) => (Number(d.value) || 0) > 0).sort((a, b) => b.value - a.value);
+  const total = rows.reduce((a, d) => a + (Number(d.value) || 0), 0) || 1;
+  // build stroke-dash arcs on a 100-circumference circle (r = 100/2π)
+  const R = 15.915;
+  let offset = 25; // start at top
+  const arcs = rows.map((d, i) => {
+    const pct = (Number(d.value) / total) * 100;
+    const seg = { color: SERIES[i % SERIES.length], dash: pct, gap: 100 - pct, off: offset };
+    offset -= pct;
+    return seg;
+  });
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
-        <PieChart>
-          <Pie
-            data={data} dataKey="value" nameKey="name"
-            cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}
-            isAnimationActive={false}
-          >
-            {data.map((_, i) => <Cell key={i} fill={SERIES[i % SERIES.length]} />)}
-          </Pie>
-          <Tooltip
-            {...tipStyle(isDark)}
-            formatter={(v: number) => [currency ? fmtUSD(v, false) : fmtNum(v, 1)]}
-          />
-          <Legend wrapperStyle={{ fontSize: 10, color: c.text }} iconSize={8} />
-        </PieChart>
-      </ResponsiveContainer>
+    <div style={{ width: "100%", height }} className="flex items-center gap-4">
+      <svg viewBox="0 0 42 42" width={height - 40} height={height - 40} style={{ flexShrink: 0, maxWidth: "45%" }}>
+        <circle cx="21" cy="21" r={R} fill="transparent" stroke={c.track} strokeWidth="6" />
+        {arcs.map((a, i) => (
+          <circle key={i} cx="21" cy="21" r={R} fill="transparent" stroke={a.color} strokeWidth="6"
+            strokeDasharray={`${a.dash} ${a.gap}`} strokeDashoffset={a.off} transform="rotate(-90 21 21)" />
+        ))}
+        <text x="21" y="20" textAnchor="middle" fontSize="3.2" fontWeight="700" fill={c.text}>{rows.length}</text>
+        <text x="21" y="24" textAnchor="middle" fontSize="2.2" fill={c.axis}>parts</text>
+      </svg>
+      <div className="flex-1 space-y-1 min-w-0">
+        {rows.map((d, i) => (
+          <div key={d.name} className="flex items-center gap-2 text-[11px]">
+            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: SERIES[i % SERIES.length] }} />
+            <span className="truncate flex-1" style={{ color: c.text }}>{d.name}</span>
+            <span className="font-semibold numeric" style={{ color: c.text }}>{Math.round((d.value / total) * 100)}%</span>
+            <span className="numeric text-[10px]" style={{ color: c.axis }}>{fmt(d.value)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -496,79 +469,39 @@ export function DualAxisBarChart({
 
 // ─── Scatter - explicit domain so all points across multiple <Scatter> show ─
 export function ScatterCard({
-  data, height = 280,
-  xLabel = "Cost / unit (USD)",
-  yLabel = "Emissions / unit",
-  yUnit = "t",
+  data, height = 280, xLabel = "Cost / unit (USD)", yLabel = "Emissions / unit", yUnit = "t",
 }: {
   data: { x: number; y: number; name: string; size?: number }[];
   height?: number; xLabel?: string; yLabel?: string; yUnit?: string;
 }) {
   const isDark = useIsDark();
   const c = clr(isDark);
-
-  // Compute global domain so all Scatter components are within range
-  const xs = data.map(d => d.x);
-  const ys = data.map(d => d.y);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMin = Math.min(...ys), yMax = Math.max(...ys);
-  const xPad = ((xMax - xMin) || xMax) * 0.18;
-  const yPad = ((yMax - yMin) || yMax) * 0.18;
-  const xDomain: [number, number] = [Math.max(0, xMin - xPad), xMax + xPad];
-  const yDomain: [number, number] = [Math.max(0, yMin - yPad), yMax + yPad];
-
-  const CustomTip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0]?.payload ?? {};
-    return (
-      <div style={{ background: c.tooltipBg, border: `1px solid ${c.tooltipBorder}`, borderRadius: 6, padding: "6px 10px", fontSize: 11 }}>
-        <div style={{ fontWeight: 600, color: c.text, marginBottom: 3 }}>{d.name}</div>
-        <div style={{ color: CHART.blue }}>Cost/unit: {fmtUSD(d.x, false)}</div>
-        <div style={{ color: CHART.positive }}>CO₂e/unit: {fmtNum(d.y, 2)} {yUnit}</div>
-        {d.size && <div style={{ color: c.axis }}>Annual volume: {fmtNum(d.size)}</div>}
-      </div>
-    );
-  };
-
+  if (!data.length) return null;
+  const xs = data.map((d) => d.x), ys = data.map((d) => d.y);
+  let xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xp = ((xMax - xMin) || xMax || 1) * 0.18, yp = ((yMax - yMin) || yMax || 1) * 0.18;
+  xMin -= xp; xMax += xp; yMin = Math.max(0, yMin - yp); yMax += yp;
+  const X = (v: number) => ((v - xMin) / ((xMax - xMin) || 1)) * 100;
+  const Y = (v: number) => 100 - ((v - yMin) / ((yMax - yMin) || 1)) * 100;
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="99%" height="100%" minWidth={0} debounce={50}>
-        <ScatterChart
-          margin={{ top: 8, right: 20, left: 10, bottom: 36 }}
-        >
-          {gridEl(isDark)}
-          <XAxis
-            type="number" dataKey="x" name="cost"
-            domain={xDomain} {...axisCfg(isDark)}
-            tickFormatter={(v) => fmtUSD(v)}
-            label={{ value: xLabel, position: "insideBottom", offset: -22, fontSize: 10, fill: c.axis }}
-          />
-          <YAxis
-            type="number" dataKey="y" name="emissions"
-            domain={yDomain} {...axisCfg(isDark)}
-            tickFormatter={(v) => fmtNum(v, 1)}
-            label={{ value: yLabel, angle: -90, position: "insideLeft", offset: 16, fontSize: 10, fill: c.axis }}
-          />
-          <Tooltip content={<CustomTip />} cursor={{ strokeDasharray: "3 3", stroke: c.axis }} />
-          <Legend
-            verticalAlign="bottom" align="center"
-            wrapperStyle={{ fontSize: 10, color: c.text, paddingTop: 8 }}
-            iconSize={10} iconType="circle"
-          />
-          {data.map((item, i) => (
-            <Scatter
-              key={item.name} name={item.name}
-              data={[item]} fill={SERIES[i % SERIES.length]}
-              isAnimationActive={false}
-            />
-          ))}
-        </ScatterChart>
-      </ResponsiveContainer>
+    <div style={{ width: "100%", height }} className="flex flex-col">
+      <div className="relative flex-1 rounded-lg" style={{ minHeight: 0, border: `1px solid ${c.divider}`, background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.015)" }}>
+        {data.map((d, i) => (
+          <div key={i} className="absolute" style={{ left: `${X(d.x)}%`, top: `${Y(d.y)}%`, transform: "translate(-50%,-50%)" }}>
+            <div className="rounded-full" style={{ width: 11, height: 11, background: SERIES[i % SERIES.length], opacity: 0.85, border: "1px solid rgba(255,255,255,0.5)" }}
+              title={`${d.name}: ${fmtUSD(d.x, false)} / ${fmtNum(d.y, 2)} ${yUnit}`} />
+            <div className="absolute left-1/2 -translate-x-1/2 text-[9px] whitespace-nowrap" style={{ top: -13, color: c.text }}>{d.name}</div>
+          </div>
+        ))}
+        <span className="absolute left-2 top-1 text-[9px] font-semibold" style={{ color: "#0e9f6e" }}>best</span>
+        <span className="absolute right-2 bottom-1 text-[9px]" style={{ color: "#ef4444" }}>worst</span>
+      </div>
+      <div className="flex justify-between text-[9px] mt-1" style={{ color: c.axis }}>
+        <span>{xLabel} →</span><span>↑ {yLabel}</span>
+      </div>
     </div>
   );
 }
-
-// ─── Carbon Coverage Bar (FDD Emissions Confidence Model) ────────────────────
 export function CoverageBar({ coverage }: { coverage: { measured_pct?: number; estimated_pct?: number; unknown_pct?: number } | null | undefined }) {
   const m = coverage?.measured_pct ?? 0, e = coverage?.estimated_pct ?? 0, u = coverage?.unknown_pct ?? 0;
   const seg = [

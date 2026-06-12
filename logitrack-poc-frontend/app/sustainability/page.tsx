@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fmtUSD, fmtNum, fmtCO2 } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Segmented, Badge, Select } from "@/components/ui";
-import { ScatterCard, HBarList, BarChartCard, CoverageBar } from "@/components/charts";
+import { ScatterCard, HBarList, BarChartCard, CoverageBar, DonutCard } from "@/components/charts";
 
 // ─── Real Whirlpool product specs (Qingdao factory → Chicago DC supply chain) ──
 const WHIRLPOOL_SPECS = {
@@ -246,6 +246,9 @@ export default function SustainabilityPage() {
       {/* V3.0 - All end-to-end flows for the selected product (segments + attribution + apportioning) */}
       {selectedProduct && <ProductFlowsTable product={selectedProduct} />}
 
+      {/* V3.0 - dual landed cost (manufacturing vs customer) */}
+      {selectedProduct && <DualCostCard product={selectedProduct} />}
+
       {/* Summary KPIs - per-unit only when product is selected */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {selectedProduct && jKpis ? (
@@ -458,8 +461,12 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
     return Object.entries(m).map(([name, v]) => ({ name: name[0].toUpperCase() + name.slice(1), value: Math.round(v) })).sort((a, b) => b.value - a.value);
   }, [em]);
   const total = em?.total_tco2e ?? 0;
-  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({ price: `$${p}`, cost: Math.round(total * p) })), [total]);
   const best = recs?.recommendations?.[0]?.emissions_reduction_pct ?? 0;
+  const reduced = total * (1 - best / 100);
+  // Exposure today vs after the best reduction lever, across carbon prices - the gap is avoidable cost.
+  const sensitivity = useMemo(() => CP_CURVE.map((p) => ({
+    price: `$${p}`, Today: Math.round(total * p), Optimized: Math.round(reduced * p),
+  })), [total, reduced]);
   const avoidance = total * (best / 100) * cp;
   const topLevers = (recs?.recommendations ?? []).slice(0, 5);
 
@@ -471,11 +478,11 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
       <div className="grid lg:grid-cols-2 gap-5">
         <Card>
           <CardHeader><CardTitle>Emissions Attribution - where they originate</CardTitle><Badge variant="green">{fmtCO2(total)} total</Badge></CardHeader>
-          <CardBody><HBarList data={attribution} valueKey="value" nameKey="name" /></CardBody>
+          <CardBody><DonutCard data={attribution} height={210} currency={false} /></CardBody>
         </Card>
         <Card>
           <CardHeader><CardTitle>Transport Sub-Attribution by Mode</CardTitle></CardHeader>
-          <CardBody><HBarList data={byMode} valueKey="value" nameKey="name" color="#0e9f6e" /></CardBody>
+          <CardBody><DonutCard data={byMode} height={210} /></CardBody>
         </Card>
       </div>
 
@@ -491,7 +498,8 @@ function EmissionsIntelligence({ cp }: { cp: number }) {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Carbon cost sensitivity (price per tonne)</div>
-            <BarChartCard data={sensitivity} x="price" currency height={200} bars={[{ key: "cost", name: "Carbon cost exposure", color: "#d97706" }]} />
+            <BarChartCard data={sensitivity} x="price" currency height={200}
+              bars={[{ key: "Today", name: "Exposure today", color: "#d97706" }, { key: "Optimized", name: "After reduction", color: "#0e9f6e" }]} />
           </div>
         </CardBody>
       </Card>
@@ -595,8 +603,8 @@ function ProductFlowsTable({ product }: { product: string }) {
                 <th className="px-4 py-2.5 text-right">Load f.</th>
               </tr></thead>
               <tbody>
-                {flows.map((f) => (
-                  <FlowGroup key={f.flow_id} f={f} open={open === f.flow_id} onToggle={() => setOpen(open === f.flow_id ? null : f.flow_id)} />
+                {flows.map((f, fi) => (
+                  <FlowGroup key={f.flow_id} f={f} label={`Network ${fi + 1}`} open={open === f.flow_id} onToggle={() => setOpen(open === f.flow_id ? null : f.flow_id)} />
                 ))}
               </tbody>
             </table>
@@ -607,11 +615,11 @@ function ProductFlowsTable({ product }: { product: string }) {
   );
 }
 
-function FlowGroup({ f, open, onToggle }: { f: any; open: boolean; onToggle: () => void }) {
+function FlowGroup({ f, label, open, onToggle }: { f: any; label: string; open: boolean; onToggle: () => void }) {
   return (
     <>
       <tr className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer" onClick={onToggle}>
-        <td className="px-4 py-2.5 font-medium text-brand dark:text-cyan-400">{open ? "▾ " : "▸ "}{f.flow_id}</td>
+        <td className="px-4 py-2.5 font-medium text-brand dark:text-cyan-400">{open ? "▾ " : "▸ "}{label}</td>
         <td className="px-4 py-2.5 text-ink-900 dark:text-white">{f.origin} → {f.destination}</td>
         <td className="px-4 py-2.5 text-right numeric text-slate-600 dark:text-slate-400">{f.segment_count}</td>
         <td className="px-4 py-2.5 text-right numeric text-ink-900 dark:text-white">{fmtUSD(f.cost_per_unit, false)}</td>
@@ -655,5 +663,70 @@ function FlowGroup({ f, open, onToggle }: { f: any; open: boolean; onToggle: () 
         </tr>
       )}
     </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Dual Landed Cost (FDD): Manufacturing landed cost vs Customer landed cost per unit.
+   Manufacturing landed = supplier/manufacturing comparison; Customer landed = profitability.
+   ──────────────────────────────────────────────────────────────────────────── */
+const DUAL_COLORS = ["#1d4ed8", "#0ea5e9", "#0e9f6e", "#f59e0b", "#8b5cf6", "#ef4444"];
+
+function DualCostCard({ product }: { product: string }) {
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { setD(null); api.dualCost(product).then(setD).catch(() => setD(null)); }, [product]);
+  const s = d?.selected;
+  if (!s) return <Card className="mb-6"><CardBody><Spinner label="Computing dual landed cost…" /></CardBody></Card>;
+
+  const maxTotal = Math.max(s.manufacturing_landed_cost_usd, s.customer_landed_cost_usd, 1);
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>Dual Landed Cost - {product}</CardTitle>
+        <div className="flex items-center gap-2">
+          <Badge variant="blue">ASP {fmtUSD(s.asp_usd, false)}</Badge>
+          <Badge variant={s.margin_per_unit_usd >= 0 ? "green" : "red"}>Margin/unit {fmtUSD(s.margin_per_unit_usd, false)}</Badge>
+        </div>
+      </CardHeader>
+      <CardBody className="space-y-5">
+        <DualBar title="Manufacturing landed cost" subtitle="product + freight + insurance + packaging + duties + warehousing"
+          total={s.manufacturing_landed_cost_usd} comps={s.manufacturing_components} maxTotal={maxTotal} />
+        <DualBar title="Customer landed cost" subtitle="manufacturing landed + domestic freight + last mile + returns + warranty + fulfillment"
+          total={s.customer_landed_cost_usd} comps={s.customer_components} maxTotal={maxTotal} />
+        <div className="grid md:grid-cols-5 gap-3 pt-1">
+          {(d.by_product ?? []).map((p: any) => (
+            <div key={p.product} className="rounded-lg border border-slate-200/60 dark:border-slate-700/50 px-3 py-2">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{p.product}</div>
+              <div className="text-sm font-bold text-ink-900 dark:text-white numeric">{fmtUSD(p.customer_landed_cost_usd, false)}</div>
+              <div className="text-[10px] text-slate-400">mfg {fmtUSD(p.manufacturing_landed_cost_usd, false)}</div>
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function DualBar({ title, subtitle, total, comps, maxTotal }: { title: string; subtitle: string; total: number; comps: any[]; maxTotal: number }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <div><span className="text-sm font-semibold text-ink-900 dark:text-white">{title}</span> <span className="text-[11px] text-slate-400">{subtitle}</span></div>
+        <span className="text-sm font-bold numeric text-ink-900 dark:text-white">{fmtUSD(total, false)}</span>
+      </div>
+      <div className="flex h-6 w-full rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800" style={{ width: `${(total / maxTotal) * 100}%` }}>
+        {comps.map((c: any, i: number) => (
+          <div key={c.label} title={`${c.label}: ${c.value_usd}`} style={{ width: `${(c.value_usd / total) * 100}%`, background: DUAL_COLORS[i % DUAL_COLORS.length] }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
+        {comps.map((c: any, i: number) => (
+          <span key={c.label} className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: DUAL_COLORS[i % DUAL_COLORS.length] }} />
+            {c.label} {fmtUSD(c.value_usd, false)}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

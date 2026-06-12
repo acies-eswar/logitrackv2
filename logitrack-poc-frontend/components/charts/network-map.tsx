@@ -176,10 +176,25 @@ export function NetworkMap({ nodes, edges, onSelect, selected, highlightEdges }:
       </div>
 
       {/* Map */}
-      <div className="relative bg-[#0d1117] rounded-xl overflow-hidden border border-slate-700">
+      <div className="relative rounded-xl overflow-hidden border border-slate-700" style={{ boxShadow: "inset 0 0 80px rgba(0,0,0,0.5)" }}>
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
+          <defs>
+            <radialGradient id="ocean" cx="50%" cy="42%" r="75%">
+              <stop offset="0%" stopColor="#10243f" />
+              <stop offset="60%" stopColor="#0b1830" />
+              <stop offset="100%" stopColor="#070f1f" />
+            </radialGradient>
+            <linearGradient id="land" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#243449" />
+              <stop offset="100%" stopColor="#1a2738" />
+            </linearGradient>
+            <filter id="nodeGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.2" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
           {/* Ocean background */}
-          <rect width={W} height={H} fill="#0d1629" />
+          <rect width={W} height={H} fill="url(#ocean)" />
 
           {/* Latitude grid */}
           {[60, 30, 0, -30, -60].map((lat) => {
@@ -198,7 +213,7 @@ export function NetworkMap({ nodes, edges, onSelect, selected, highlightEdges }:
 
           {/* Continent fills */}
           {CONTINENTS.map((coords, i) => (
-            <path key={i} d={continentPath(coords)} fill="#1e293b" stroke="#334155" strokeWidth={0.6} />
+            <path key={i} d={continentPath(coords)} fill="url(#land)" stroke="#3b5474" strokeWidth={0.7} />
           ))}
 
           {/* Flow edges - deduplicated groups */}

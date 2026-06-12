@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, fmtUSD, fmtCO2, fmtNum, fmtPct } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardBody, KPI, PageHeader, Spinner, ApiError, Badge, Segmented, Select } from "@/components/ui";
-import { HBarList } from "@/components/charts";
+import { HBarList, DonutCard } from "@/components/charts";
 
 const DISPOSITION_STYLE: Record<string, { bg: string; text: string; border: string }> = {
   GROW:   { bg: "bg-positive/10",  text: "text-positive", border: "border-positive/30" },
@@ -20,8 +20,13 @@ export default function TransportationPage() {
   const [transit,  setTransit]  = useState<any[]>([]);
   const [modeF,    setModeF]    = useState("all");
   const [search,   setSearch]   = useState("");
-  const [product,  setProduct]  = useState("all");
+  const [product,  setProduct]  = useState("Refrigerator");
   const [flows,    setFlows]    = useState<any>(null);
+  // Business decision levers that drive Grow / Retain / Improve / Exit.
+  const [emFocus,  setEmFocus]  = useState(25);   // % weight placed on emissions
+  const [minOtif,  setMinOtif]  = useState(93);   // min acceptable OTIF %
+  const [maxLead,  setMaxLead]  = useState(32);   // max acceptable transit days
+  const [maxCostPrem, setMaxCostPrem] = useState(20); // max cost premium vs network avg (%)
   const [error,    setError]    = useState(false);
 
   const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
@@ -86,27 +91,67 @@ export default function TransportationPage() {
     [lanes, modeF, search, product],
   );
 
-  // Must be before early returns - hooks order must be stable
+  // Network reference points used to normalise each carrier KPI.
+  const refs = useMemo(() => {
+    const n = carriers.length || 1;
+    const avg = (k: string) => carriers.reduce((a, c) => a + (Number(c[k]) || 0), 0) / n;
+    return {
+      cps: avg("cost_per_shipment") || 1,
+      intensity: avg("emission_intensity_g_per_tkm") || 1,
+      transit: avg("avg_transit_days") || 1,
+    };
+  }, [carriers]);
+
+  // Disposition decided live from the business levers (emissions focus + service/lead/cost guardrails).
+  const dispOf = useCallback((c: any) => {
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    const cps = Number(c.cost_per_shipment) || 0;
+    const otif = Number(c.avg_otif_pct) || 0;
+    const intensity = Number(c.emission_intensity_g_per_tkm) || 0;
+    const transit = Number(c.avg_transit_days) || 0;
+    const costScore = clamp(100 * (1.5 - cps / refs.cps));
+    const emitScore = clamp(100 * (1.5 - intensity / refs.intensity));
+    const leadScore = clamp(100 * (1.5 - transit / refs.transit));
+    const svcScore = clamp(otif);
+    const eW = emFocus / 100, rest = 1 - eW;
+    const score = eW * emitScore + rest * (0.45 * costScore + 0.35 * svcScore + 0.20 * leadScore);
+    // hard business guardrails
+    let violations = 0;
+    if (otif < minOtif) violations++;
+    if (transit > maxLead) violations++;
+    if (cps > refs.cps * (1 + maxCostPrem / 100)) violations++;
+    let disp = score >= 68 ? "GROW" : score >= 54 ? "RETAIN" : score >= 42 ? "IMPROVE" : "EXIT";
+    if (violations >= 2) disp = "EXIT";
+    else if (violations === 1 && (disp === "GROW" || disp === "RETAIN")) disp = "IMPROVE";
+    return disp;
+  }, [refs, emFocus, minOtif, maxLead, maxCostPrem]);
+
   const dispositionSummary = useMemo(() => {
     const counts: Record<string, number> = { GROW: 0, RETAIN: 0, IMPROVE: 0, EXIT: 0 };
     const groups: Record<string, string[]> = { GROW: [], RETAIN: [], IMPROVE: [], EXIT: [] };
+    const byCarrier: Record<string, string> = {};
     let spendAtRisk = 0, savingsOpportunity = 0;
     carriers.forEach((c) => {
-      const d = c.disposition as string ?? "RETAIN";
-      const key = ["GROW","RETAIN","IMPROVE","EXIT"].includes(d) ? d : "RETAIN";
+      const key = dispOf(c);
+      byCarrier[c.carrier] = key;
       counts[key] = (counts[key] ?? 0) + 1;
       groups[key].push(c.carrier);
       if (key === "EXIT" || key === "IMPROVE") spendAtRisk += c.annual_freight_usd ?? 0;
       if (key === "EXIT") savingsOpportunity += Math.max(0, (c.cost_per_shipment - (c.cost_per_shipment * 0.93)) * (c.shipments ?? 0));
     });
-    return { counts, groups, spendAtRisk, savingsOpportunity };
-  }, [carriers]);
+    return { counts, groups, byCarrier, spendAtRisk, savingsOpportunity };
+  }, [carriers, dispOf]);
 
   if (error) return <ApiError retry={load} />;
   if (!sum)  return <Spinner label="Loading transportation performance..." />;
 
-  // Top 10 carrier freight spend
-  const carrierChart = carriers.slice(0, 10).map((c) => ({ name: c.carrier, freight: c.annual_freight_usd }));
+  // Carrier freight-spend share: top 6 carriers + an "Other" slice (composition, not a ranking).
+  const carrierShare = (() => {
+    const sorted = [...carriers].sort((a, b) => (b.annual_freight_usd ?? 0) - (a.annual_freight_usd ?? 0));
+    const top = sorted.slice(0, 6).map((c) => ({ name: c.carrier, value: c.annual_freight_usd ?? 0 }));
+    const other = sorted.slice(6).reduce((a, c) => a + (c.annual_freight_usd ?? 0), 0);
+    return other > 0 ? [...top, { name: "Other carriers", value: other }] : top;
+  })();
 
   return (
     <>
@@ -146,6 +191,17 @@ export default function TransportationPage() {
           </div>
         </CardHeader>
         <CardBody>
+          {/* Business decision levers - tune what matters and re-categorise carriers live */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 mb-4">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Decision levers</div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Lever label="Emissions focus" value={emFocus} unit="%" min={0} max={70} onChange={setEmFocus} color="text-positive" hint="weight on emissions vs cost/service" />
+              <Lever label="Min OTIF" value={minOtif} unit="%" min={80} max={99} onChange={setMinOtif} color="text-brand dark:text-cyan-400" hint="below this is a service breach" />
+              <Lever label="Max lead time" value={maxLead} unit=" d" min={5} max={60} onChange={setMaxLead} color="text-warning" hint="above this is a lead-time breach" />
+              <Lever label="Max cost premium" value={maxCostPrem} unit="%" min={0} max={60} onChange={setMaxCostPrem} color="text-warning" hint="vs network average cost/shipment" />
+            </div>
+            <div className="text-[11px] text-slate-400 mt-2">Grow / Retain need to clear the guardrails; one breach caps a carrier at Improve, two or more force Exit.</div>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
             {(["GROW","RETAIN","IMPROVE","EXIT"] as const).map((d) => {
               const st = DISPOSITION_STYLE[d];
@@ -173,10 +229,10 @@ export default function TransportationPage() {
 
       <div className="grid lg:grid-cols-3 gap-5 mb-6">
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Carrier Freight Spend: Top 10</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Carrier Freight Spend share</CardTitle><Badge variant="blue">top {Math.min(7, carrierShare.length)} of {carriers.length}</Badge></CardHeader>
           <CardBody>
-            {carrierChart.length > 0
-              ? <HBarList data={carrierChart} valueKey="freight" nameKey="name" currency color="#1d4ed8" />
+            {carrierShare.length > 0
+              ? <DonutCard data={carrierShare} height={240} currency />
               : <div className="py-8 text-center text-slate-400 text-sm">No carrier data available</div>}
           </CardBody>
         </Card>
@@ -225,9 +281,8 @@ export default function TransportationPage() {
               {carriers.map((c) => {
                 const intensityDelta = c.intensity_vs_benchmark ?? 0;
                 const isSelected = selectedCarrier === c.carrier;
-                const disp = (c.disposition as string) ?? "RETAIN";
-                const dispKey = ["GROW","RETAIN","IMPROVE","EXIT"].includes(disp) ? disp : "RETAIN";
-                const ds = DISPOSITION_STYLE[dispKey];
+                const dispKey = dispositionSummary.byCarrier[c.carrier] ?? "RETAIN";
+                const ds = DISPOSITION_STYLE[dispKey] ?? DISPOSITION_STYLE.RETAIN;
                 return (
                   <tr
                     key={c.carrier}
@@ -410,6 +465,20 @@ function DecarbonizationOpportunities() {
         ))}
       </CardBody>
     </Card>
+  );
+}
+
+function Lever({ label, value, min, max, onChange, color, unit = "", hint }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void; color: string; unit?: string; hint?: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{label}</span>
+        <span className={`text-sm font-bold numeric ${color}`}>{value}{unit}</span>
+      </div>
+      <input type="range" min={min} max={max} value={value}
+        onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-brand" />
+      {hint && <div className="text-[10px] text-slate-400 mt-0.5">{hint}</div>}
+    </div>
   );
 }
 

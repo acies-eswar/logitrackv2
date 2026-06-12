@@ -17,21 +17,36 @@ import { useApprovals, setApproval, isApproved } from "@/lib/approvals";
 type Opt = { name: string; c: number; e: number; l: number; r: number; inv: number };
 const O = (name: string, c = 0, e = 0, l = 0, r = 0, inv = 0): Opt => ({ name, c, e, l, r, inv });
 
-// Predefined, realistic alternatives per node (deltas vs the current baseline).
+// Realistic, geographically-coherent alternatives per node. Deltas are vs the current
+// baseline and reflect real-world trade-offs (air = fast but costly + dirty; rail = clean
+// but slower; nearshoring to Mexico = shorter lead time to US DCs, lower ocean emissions).
 const NODE_POOLS: { id: string; label: string; options: Opt[] }[] = [
-  { id: "plant", label: "Plant", options: [
-    O("Shanghai Plant"), O("Vietnam Plant", -0.08, -0.12, 2, -5, 2.2), O("Thailand Plant", -0.05, -0.08, 1, -3, 1.5),
-    O("Mexico Plant", -0.12, -0.30, -5, -10, 4.1), O("India Plant", -0.10, -0.18, 4, -4, 3.0) ] },
+  { id: "plant", label: "Source / Plant", options: [
+    O("Shanghai, CN"), O("Suzhou, CN", -0.02, -0.01, 0, 0, 0.3),
+    O("Ho Chi Minh, VN", -0.08, -0.12, 2, -5, 2.2), O("Bangkok, TH", -0.05, -0.08, 1, -3, 1.5),
+    O("Monterrey, MX", -0.12, -0.30, -6, -10, 4.1), O("Pune, IN", -0.10, -0.18, 3, -4, 3.0) ] },
   { id: "oport", label: "Origin Port", options: [
-    O("Singapore"), O("Port Klang", -0.02, -0.03, 0, -1, 0), O("Shanghai"), O("Rotterdam", 0.03, 0.02, 2, 1, 0), O("Los Angeles", 0.01, 0.01, -1, 0, 0) ] },
-  { id: "mode", label: "Mode", options: [
-    O("Ocean"), O("Ocean + Rail", -0.05, -0.40, 2, -2, 0.4), O("Ocean + Truck", 0, -0.10, 0, 0, 0),
-    O("Rail", -0.08, -0.45, 3, -3, 0.6), O("Truck", 0.05, -0.05, -1, 2, 0), O("Air", 0.40, 2.0, -10, 10, 0) ] },
+    O("Shanghai (Yangshan)"), O("Ningbo-Zhoushan", -0.02, -0.02, 0, -1, 0),
+    O("Shenzhen (Yantian)", -0.01, -0.01, 0, 0, 0), O("Port Klang", -0.02, -0.03, 1, -1, 0),
+    O("Laem Chabang", -0.01, -0.02, 0, -1, 0), O("Manzanillo, MX", -0.06, -0.10, -4, -2, 0.2) ] },
+  { id: "mode", label: "Main Mode", options: [
+    O("Ocean (FCL)"), O("Ocean + Rail", -0.05, -0.40, 2, -2, 0.4), O("Ocean + Truck", 0, -0.10, 0, 0, 0),
+    O("Rail (intermodal)", -0.08, -0.45, 3, -3, 0.6), O("Truck", 0.05, -0.05, -1, 2, 0),
+    O("Air", 0.42, 2.10, -11, 10, 0) ] },
   { id: "carrier", label: "Carrier", options: [
-    O("Maersk"), O("MSC", -0.02, 0, 0, 0, 0), O("CMA CGM", -0.01, -0.01, 0, -1, 0), O("Hapag Lloyd", 0.01, 0, 0, 0, 0), O("ONE", 0, 0, 1, 0, 0) ] },
-  { id: "dc", label: "Distribution Center", options: [
-    O("Chicago"), O("Dallas", -0.02, -0.02, -1, -1, 0), O("Atlanta", -0.01, -0.01, 0, 0, 0), O("Toronto", 0.02, 0.01, 1, 1, 0), O("Los Angeles", 0.03, 0, -2, 0, 0) ] },
+    O("Maersk"), O("MSC", -0.02, 0, 0, 0, 0), O("CMA CGM", -0.01, -0.01, 0, -1, 0),
+    O("Hapag-Lloyd", 0.01, -0.01, 0, 0, 0), O("ONE", 0, 0, 1, 0, 0), O("COSCO", -0.02, 0.01, 0, 1, 0) ] },
+  { id: "dc", label: "Destination DC", options: [
+    O("Chicago"), O("Dallas", -0.02, -0.02, -1, -1, 0), O("Atlanta", -0.01, -0.01, 0, 0, 0),
+    O("Los Angeles", 0.03, 0.01, -2, 0, 0), O("Chennai", -0.04, -0.03, 1, 0, 0.2) ] },
 ];
+
+// Map a free-text token to an option index for a node (so the flow reflects the recommendation).
+const NODE_INDEX = (nodeId: string, match: (name: string) => boolean) => {
+  const pool = NODE_POOLS.find((n) => n.id === nodeId)!;
+  const i = pool.options.findIndex((o) => match(o.name.toLowerCase()));
+  return i < 0 ? 0 : i;
+};
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 
@@ -63,28 +78,48 @@ function compute(baseline: any, sel: number[]) {
 }
 
 // The AI-recommended preset (node selections) for a recommendation, by its type.
-function recommendedSel(type: string): number[] {
+// The CURRENT network the recommendation starts from, inferred from its name
+// (e.g. an air-freight rec starts on Air; a "China to Mexico" rec starts in China).
+function currentSel(rec: any): number[] {
+  const n = (rec?.name ?? "").toLowerCase();
   const s = [0, 0, 0, 0, 0]; // [plant, oport, mode, carrier, dc]
-  switch (type) {
-    case "modal_shift": s[2] = 1; break;                 // Ocean + Rail
-    case "supplier": s[0] = 3; break;                    // Mexico Plant
-    case "route": s[1] = 1; break;                       // Port Klang
-    case "carrier": s[3] = 1; break;                     // MSC
-    case "plant_allocation": s[0] = 2; break;            // Thailand Plant
-    case "dc_allocation": s[4] = 1; break;               // Dallas
-    case "hybrid": s[0] = 1; s[2] = 1; break;            // Vietnam + Ocean+Rail
-    default: s[2] = 1; break;
-  }
+  if (n.includes("air")) s[2] = NODE_INDEX("mode", (x) => x === "air");
+  else if (n.includes("road") || n.includes("truck")) s[2] = NODE_INDEX("mode", (x) => x.startsWith("truck"));
   return s;
 }
 
-// AI-evaluated alternative presets (shown in the table; clicking applies them live).
+// The AI-recommended network: a genuinely better, distinct combination (always cleaner
+// than the current network, never identical to it).
+function recommendedSel(rec: any): number[] {
+  const n = (rec?.name ?? "").toLowerCase();
+  const s = [0, 0, 0, 0, 0]; // [plant, oport, mode, carrier, dc]
+  // default to the best-balanced mode (low emissions, sensible cost/lead)
+  s[2] = NODE_INDEX("mode", (x) => x.includes("ocean + rail"));
+  if (n.includes("road") && n.includes("rail")) s[2] = NODE_INDEX("mode", (x) => x.startsWith("rail"));
+  // sourcing
+  if (n.includes("mexico") || n.includes("nearshore")) { s[0] = NODE_INDEX("plant", (x) => x.includes("monterrey")); s[1] = NODE_INDEX("oport", (x) => x.includes("manzanillo")); }
+  else if (n.includes("vietnam")) s[0] = NODE_INDEX("plant", (x) => x.includes("ho chi minh"));
+  else if (n.includes("india")) s[0] = NODE_INDEX("plant", (x) => x.includes("pune"));
+  else if (n.includes("thailand")) s[0] = NODE_INDEX("plant", (x) => x.includes("bangkok"));
+  else if (rec?.type === "supplier" || rec?.type === "hybrid") s[0] = NODE_INDEX("plant", (x) => x.includes("monterrey"));
+  // distribution
+  if (n.includes("chennai")) s[4] = NODE_INDEX("dc", (x) => x.includes("chennai"));
+  else if (n.includes("dallas")) s[4] = NODE_INDEX("dc", (x) => x.includes("dallas"));
+  else if (rec?.type === "dc_allocation") s[4] = NODE_INDEX("dc", (x) => x.includes("dallas"));
+  // carrier / route levers
+  if (rec?.type === "carrier") s[3] = NODE_INDEX("carrier", (x) => x === "msc");
+  if (rec?.type === "route") s[1] = NODE_INDEX("oport", (x) => x.includes("ningbo"));
+  return s;
+}
+
+// AI-evaluated alternative networks (shown in the table; clicking applies them live).
+// sel = [plant, oport, mode, carrier, dc] indices into NODE_POOLS.
 const ALT_PRESETS: { name: string; sel: number[] }[] = [
-  { name: "Vietnam Plant + Ocean + Rail", sel: [1, 1, 1, 0, 0] },
-  { name: "Mexico Plant + Truck", sel: [3, 0, 4, 0, 1] },
-  { name: "Thailand Plant + Ocean", sel: [2, 0, 0, 1, 0] },
-  { name: "India Plant + Rail", sel: [4, 1, 3, 0, 0] },
-  { name: "Air Freight Option", sel: [0, 4, 5, 3, 0] },
+  { name: "Vietnam source + Ocean & Rail", sel: [2, 0, 1, 0, 0] },
+  { name: "Mexico nearshore + Truck", sel: [4, 5, 4, 0, 1] },
+  { name: "Thailand source + Ocean", sel: [3, 4, 0, 1, 0] },
+  { name: "India source + Ocean & Rail", sel: [5, 0, 1, 0, 0] },
+  { name: "Express Air (premium)", sel: [0, 0, 5, 0, 0] },
 ];
 
 const CAT_VARIANT: Record<string, "green" | "blue" | "amber" | "red" | "slate"> = {
@@ -187,12 +222,15 @@ function AIRecommendationCenter({ recs, netCounts, approvals, onOpen }: any) {
 
 /* ── Recommendation Details (flow explorer + live recalculation) ────────────── */
 function RecommendationDetails({ rec, approval }: { rec: any; approval?: string }) {
-  const recommended = useMemo(() => recommendedSel(rec.type), [rec.type]);
+  const curSel = useMemo(() => currentSel(rec), [rec.scenario_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recommended = useMemo(() => recommendedSel(rec), [rec.scenario_id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [sel, setSel] = useState<number[]>(recommended);
-  useEffect(() => { setSel(recommendedSel(rec.type)); }, [rec.type]);
+  useEffect(() => { setSel(recommendedSel(rec)); }, [rec.scenario_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const base = rec.baseline;
   const k = useMemo(() => compute(base, sel), [base, sel]);
+  // Baseline already reflects the current lanes, so the numeric "current" uses no extra
+  // deltas; curSel only labels which network the recommendation starts from.
   const current = useMemo(() => compute(base, [0, 0, 0, 0, 0]), [base]);
   const isRecommended = sel.join() === recommended.join();
   const [saved, setSaved] = useState(false);
@@ -209,7 +247,7 @@ function RecommendationDetails({ rec, approval }: { rec: any; approval?: string 
             <Badge variant={isRecommended ? "green" : "amber"}>{isRecommended ? "AI-recommended configuration" : "Modified configuration"}</Badge>
           </div>
           <div className="grid lg:grid-cols-3 gap-4">
-            <FlowSummary title="Current network" sel={[0, 0, 0, 0, 0]} tone="slate" />
+            <FlowSummary title="Current network" sel={curSel} tone="slate" />
             <FlowSummary title="Selected network" sel={sel} tone="brand" />
             <div className="rounded-lg border border-positive/30 bg-positive/5 dark:bg-positive/10 p-3">
               <div className="text-[11px] uppercase tracking-wide text-positive mb-2">Expected outcome</div>
@@ -222,16 +260,18 @@ function RecommendationDetails({ rec, approval }: { rec: any; approval?: string 
         </CardBody>
       </Card>
 
-      {/* Section 2 - Recommendation KPIs (live) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
+      {/* Section 2 - Recommendation KPIs (live), two rows */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KPI label="Current Freight" value={fmtUSD(base?.annual_freight_usd)} accent="blue" />
         <KPI label="Current Emissions" value={fmtCO2(base?.annual_co2e)} accent="green" />
         <KPI label="Lead Time" value={`${fmtNum(k.futureLead, 1)} d`} />
         <KPI label="OTIF" value={fmtPct(k.otif)} />
+        <KPI label="Decision Score" value={String(k.decision)} accent="blue" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI label="Annual Savings" value={fmtUSD(k.savings)} accent={k.savings >= 0 ? "green" : "red"} />
         <KPI label="Emission Reduction" value={fmtPct(k.emReductionPct)} accent="green" />
-        <KPI label="Investment" value={fmtUSD(k.investment)} accent="amber" />
-        <KPI label="Decision Score" value={String(k.decision)} accent="blue" />
+        <KPI label="Investment" value={fmtUSD(Math.max(k.investment, rec.investment_usd || 0))} accent="amber" />
         <KPI label="Risk Score" value={fmtNum(k.riskRaw)} accent={k.riskRaw < 40 ? "green" : k.riskRaw < 60 ? "amber" : "red"} />
       </div>
 
